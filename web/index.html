@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cloud Vision Product Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-text">
+          <div class="brand-title">Cloud Vision Product Management</div>
+          <div class="brand-sub">Product images & master data</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="panel">
+        <div class="brand-tabs">
+          <button class="brand-tab active" data-brand="PAN">PAN</button>
+          <button class="brand-tab" data-brand="ARENA">ARENA</button>
+          <button class="brand-tab" data-brand="DAYBREAK">DAYBREAK</button>
+          <button class="brand-tab" data-brand="HEELCARE">HEELCARE</button>
+        </div>
+        <div class="tabs">
+          <button id="tabUpload" class="tab active">Image Uploader</button>
+          <button id="tabSearch" class="tab">Search Products</button>
+        </div>
+
+        <div id="panelUpload" class="tab-panel active">
+          <div class="card">
+            <h2>Product Image Uploader</h2>
+            <p class="subtitle">Drop JPG files named like <code>SKU_1.jpg</code>, <code>SKU_2.jpg</code>. The SKU must exist in <code>core.master_pan</code>.</p>
+
+            <div id="dropzone" class="dropzone" aria-label="File dropzone" tabindex="0">
+              <div class="dz-title">Drop files here</div>
+              <div class="dz-sub">or click to choose files</div>
+              <input id="fileInput" type="file" accept="image/jpeg" multiple />
+            </div>
+
+            <div class="actions">
+              <button id="uploadBtn" class="primary" disabled>Upload</button>
+              <button id="clearBtn" class="ghost" disabled>Clear</button>
+            </div>
+
+            <div class="meta">
+              <div>Max size: 2MB per image</div>
+              <div>Format: JPG only</div>
+            </div>
+
+            <div class="status-inline">
+              <div class="status-title">Status</div>
+              <div id="status" class="status">Waiting for files.</div>
+            </div>
+
+            <ul id="fileList" class="file-list"></ul>
+          </div>
+        </div>
+
+        <div id="panelSearch" class="tab-panel">
+          <div class="card">
+            <h2>Search Products</h2>
+            <p class="subtitle">Search by VARIATION_SKU (supports 1–9 characters, prefix match).</p>
+            <div class="search-row">
+              <input id="searchInput" type="text" placeholder="Enter VARIATION_SKU (leave blank for all)..." />
+              <select id="pageSize" class="select">
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+              </select>
+              <button id="searchBtn" class="primary">Search</button>
+              <button id="exportBtn" class="ghost" disabled>Export CSV</button>
+            </div>
+            <div class="pager">
+              <button id="prevPage" class="ghost" disabled>Prev</button>
+              <div id="pageInfo" class="pager-info">Page 1</div>
+              <button id="nextPage" class="ghost" disabled>Next</button>
+            </div>
+            <div id="searchStatus" class="status">No search yet.</div>
+            <div id="results"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-backdrop" id="modalBackdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <div id="modalTitle" class="modal-title">Images</div>
+          <button id="modalClose" class="ghost">Close</button>
+        </div>
+        <div id="modalBody" class="modal-body"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
