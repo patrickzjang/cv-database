@@ -209,6 +209,119 @@ function renderResults(rows, imageMap) {
   const headers = Object.keys(rows[0]).filter((h) => h !== "product_images");
   const grouped = groupByVariationSku(rows);
   const sortedRows = sortRows(grouped.list, sortKey, sortDir);
+  const isMobile = window.matchMedia("(max-width: 600px)").matches;
+
+  if (isMobile) {
+    const list = document.createElement("div");
+    list.className = "mobile-cards";
+
+    sortedRows.forEach((row) => {
+      const variation = row[VARIATION_COLUMN];
+      const groupRows = grouped.map.get(variation) || [row];
+      const card = document.createElement("div");
+      card.className = "mobile-card";
+
+      const header = document.createElement("div");
+      header.className = "mobile-card-header";
+
+      const title = document.createElement("div");
+      title.className = "mobile-card-title";
+      title.innerHTML = `VARIATION_SKU:<br>${variation}`;
+
+      header.appendChild(title);
+      card.appendChild(header);
+
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "mobile-card-image";
+      const imgCol = document.createElement("div");
+      imgCol.className = "mobile-image-col";
+      const images = imageMap.get(String(variation)) || [];
+      if (images.length > 0) {
+        const img = images.find((i) => /_out\./i.test(i.name)) || images[0];
+        const imageEl = document.createElement("img");
+        imageEl.src = img.url;
+        imageEl.alt = img.name;
+        imageEl.className = "thumb";
+        imageEl.style.cursor = "pointer";
+        imageEl.addEventListener("click", () => openModal(variation, images));
+        imgCol.appendChild(imageEl);
+
+        const dropdown = document.createElement("div");
+        dropdown.className = "dropdown";
+
+        const dropBtn = document.createElement("button");
+        dropBtn.className = "ghost dropdown-btn";
+        dropBtn.textContent = "Download ▾";
+        dropBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          dropdown.classList.toggle("open");
+        });
+
+        const menu = document.createElement("div");
+        menu.className = "dropdown-menu";
+
+        const dlFirst = document.createElement("button");
+        dlFirst.textContent = "Download first image";
+        dlFirst.addEventListener("click", () => {
+          dropdown.classList.remove("open");
+          downloadUrl(img.url, img.name);
+        });
+
+        const dlAll = document.createElement("button");
+        dlAll.textContent = "Download all images";
+        dlAll.addEventListener("click", () => {
+          dropdown.classList.remove("open");
+          downloadAll(images);
+        });
+
+        menu.appendChild(dlFirst);
+        menu.appendChild(dlAll);
+        dropdown.appendChild(dropBtn);
+        dropdown.appendChild(menu);
+        imgCol.appendChild(dropdown);
+      } else {
+        imgCol.textContent = "No image";
+      }
+      imgWrap.appendChild(imgCol);
+      card.appendChild(imgWrap);
+
+      const toggle = document.createElement("button");
+      toggle.className = "ghost";
+      toggle.textContent = expandedRows.has(variation) ? "Hide Details" : "Show Details";
+      toggle.addEventListener("click", () => {
+        if (expandedRows.has(variation)) {
+          expandedRows.delete(variation);
+        } else {
+          expandedRows.add(variation);
+        }
+        renderResults(lastResults, lastImageMap);
+      });
+      card.appendChild(toggle);
+
+      if (expandedRows.has(variation)) {
+        const details = document.createElement("div");
+        details.className = "mobile-card-details";
+        groupRows.forEach((item) => {
+          const rowDiv = document.createElement("div");
+          rowDiv.className = "mobile-card-row";
+          headers.forEach((h) => {
+            const field = document.createElement("div");
+            field.className = "mobile-card-field";
+            field.innerHTML = `<div class="label">${h}</div><div class="value">${item[h] ?? ""}</div>`;
+            rowDiv.appendChild(field);
+          });
+          details.appendChild(rowDiv);
+        });
+        card.appendChild(details);
+      }
+
+      list.appendChild(card);
+    });
+
+    resultsBox.appendChild(list);
+    return;
+  }
+
   const table = document.createElement("table");
   table.className = "results-table";
 
@@ -218,7 +331,11 @@ function renderResults(rows, imageMap) {
   thArrow.textContent = "";
   headRow.appendChild(thArrow);
 
-  for (const h of headers) {
+  const mobileHeaders = isMobile
+    ? headers.filter((h) => h === VARIATION_COLUMN)
+    : headers;
+
+  for (const h of mobileHeaders) {
     const th = document.createElement("th");
     th.textContent = h;
     th.classList.add("sortable");
@@ -270,7 +387,7 @@ function renderResults(rows, imageMap) {
     tdArrow.appendChild(toggle);
     tr.appendChild(tdArrow);
 
-    for (const h of headers) {
+    for (const h of mobileHeaders) {
       const td = document.createElement("td");
       const value = row[h];
       td.textContent = value === null || value === undefined ? "" : String(value);
@@ -341,7 +458,8 @@ function renderResults(rows, imageMap) {
         subArrow.textContent = "";
         sub.appendChild(subArrow);
 
-        for (const h of headers) {
+        const subHeaders = isMobile ? headers : headers;
+        for (const h of subHeaders) {
           const td = document.createElement("td");
           const value = item[h];
           td.textContent = value === null || value === undefined ? "" : String(value);

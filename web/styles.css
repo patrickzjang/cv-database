@@ -312,6 +312,75 @@ button.ghost {
   min-width: 70px;
 }
 
+.mobile-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #0f1b38;
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mobile-card-title {
+  font-weight: 700;
+}
+
+.mobile-card-image {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.mobile-image-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.mobile-card-details {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-card-row {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.mobile-card-field {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mobile-card-field .label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.mobile-card-field .value {
+  color: var(--text);
+  word-break: break-word;
+}
+
 .row-toggle {
   display: inline-flex;
   align-items: center;
@@ -445,6 +514,93 @@ button.ghost {
   margin: 60px auto;
   padding: 18px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    padding: 16px 18px;
+  }
+
+  .brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .logo {
+    height: 40px;
+  }
+
+  .brand-title {
+    font-size: 1.15rem;
+  }
+
+  .page {
+    padding: 0 14px;
+  }
+
+  .tabs,
+  .brand-tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab,
+  .brand-tab {
+    padding: 8px 12px;
+  }
+
+  .search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-row input,
+  .search-row .select,
+  .search-row button {
+    width: 100%;
+  }
+
+  .pager {
+    flex-wrap: wrap;
+  }
+
+  .card {
+    padding: 18px;
+  }
+
+  .dropzone {
+    padding: 20px;
+  }
+
+  .results-table {
+    font-size: 0.88rem;
+  }
+
+  .modal-content {
+    margin: 24px auto;
+    width: calc(100% - 24px);
+  }
+}
+
+@media (max-width: 600px) {
+  .results-table th,
+  .results-table td {
+    padding: 6px 8px;
+  }
+
+  .arrow-cell {
+    min-width: 54px;
+  }
+
+  .thumb {
+    width: 72px;
+    height: 72px;
+  }
+
+  .dropdown-btn {
+    width: 72px;
+    font-size: 0.6rem;
+  }
 }
 
 .modal-header {
