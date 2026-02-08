@@ -9,6 +9,7 @@ import {
   PRODUCT_VIEW,
   VARIATION_COLUMN,
   BRAND_VIEWS,
+  BRAND_VARIATION_VIEWS,
 } from "./config.js";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -28,6 +29,7 @@ const pageSizeSelect = document.getElementById("pageSize");
 const prevPageBtn = document.getElementById("prevPage");
 const nextPageBtn = document.getElementById("nextPage");
 const pageInfo = document.getElementById("pageInfo");
+const pageSelect = document.getElementById("pageSelect");
 const modal = document.getElementById("modal");
 const modalBackdrop = document.getElementById("modalBackdrop");
 const modalClose = document.getElementById("modalClose");
@@ -44,6 +46,9 @@ let lastImageMap = new Map();
 let lastCount = 0;
 let currentPage = 1;
 let currentBrand = "PAN";
+let sortKey = null;
+let sortDir = "asc";
+const expandedRows = new Set();
 
 function setStatus(msg) {
   statusBox.textContent = msg;
@@ -202,14 +207,33 @@ function renderResults(rows, imageMap) {
   if (!rows || rows.length === 0) return;
 
   const headers = Object.keys(rows[0]).filter((h) => h !== "product_images");
+  const grouped = groupByVariationSku(rows);
+  const sortedRows = sortRows(grouped.list, sortKey, sortDir);
   const table = document.createElement("table");
   table.className = "results-table";
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
+  const thArrow = document.createElement("th");
+  thArrow.textContent = "";
+  headRow.appendChild(thArrow);
+
   for (const h of headers) {
     const th = document.createElement("th");
     th.textContent = h;
+    th.classList.add("sortable");
+    if (sortKey === h) {
+      th.dataset.sort = sortDir;
+    }
+    th.addEventListener("click", () => {
+      if (sortKey === h) {
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = h;
+        sortDir = "asc";
+      }
+      renderResults(lastResults, lastImageMap);
+    });
     headRow.appendChild(th);
   }
   const thPic = document.createElement("th");
@@ -219,8 +243,33 @@ function renderResults(rows, imageMap) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  for (const row of rows) {
+  for (const row of sortedRows) {
     const tr = document.createElement("tr");
+    const variation = row[VARIATION_COLUMN];
+    const groupRows = grouped.map.get(variation) || [row];
+
+    const tdArrow = document.createElement("td");
+    tdArrow.className = "arrow-cell";
+    const rowNumber = document.createElement("span");
+    const pageSize = Number(pageSizeSelect.value || 100);
+    const base = (currentPage - 1) * pageSize;
+    rowNumber.textContent = `${base + sortedRows.indexOf(row) + 1}. `;
+    const isOpen = expandedRows.has(variation);
+    const toggle = document.createElement("span");
+    toggle.className = "row-toggle";
+    toggle.textContent = `${isOpen ? "▾" : "▸"}`;
+    toggle.addEventListener("click", () => {
+      if (expandedRows.has(variation)) {
+        expandedRows.delete(variation);
+      } else {
+        expandedRows.add(variation);
+      }
+      renderResults(lastResults, lastImageMap);
+    });
+    tdArrow.appendChild(rowNumber);
+    tdArrow.appendChild(toggle);
+    tr.appendChild(tdArrow);
+
     for (const h of headers) {
       const td = document.createElement("td");
       const value = row[h];
@@ -230,8 +279,8 @@ function renderResults(rows, imageMap) {
 
     const tdPic = document.createElement("td");
     tdPic.className = "thumb-wrap";
-    const variation = row[VARIATION_COLUMN] ?? "";
-    const images = imageMap.get(String(variation)) || [];
+    const variationSku = row[VARIATION_COLUMN] ?? "";
+    const images = imageMap.get(String(variationSku)) || [];
 
     if (images.length > 0) {
       const img = images.find((i) => /_out\./i.test(i.name)) || images[0];
@@ -283,6 +332,27 @@ function renderResults(rows, imageMap) {
 
     tr.appendChild(tdPic);
     tbody.appendChild(tr);
+
+    if (expandedRows.has(variation)) {
+      for (const item of groupRows) {
+        const sub = document.createElement("tr");
+        sub.className = "sub-row";
+        const subArrow = document.createElement("td");
+        subArrow.textContent = "";
+        sub.appendChild(subArrow);
+
+        for (const h of headers) {
+          const td = document.createElement("td");
+          const value = item[h];
+          td.textContent = value === null || value === undefined ? "" : String(value);
+          sub.appendChild(td);
+        }
+        const tdPicSub = document.createElement("td");
+        tdPicSub.textContent = "";
+        sub.appendChild(tdPicSub);
+        tbody.appendChild(sub);
+      }
+    }
   }
 
   table.appendChild(tbody);
@@ -402,6 +472,56 @@ function downloadCsv(rows, imageMap) {
   URL.revokeObjectURL(url);
 }
 
+function sortRows(rows, key, dir) {
+  if (!key) return rows;
+  const sorted = [...rows];
+  sorted.sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    const an = Number(av);
+    const bn = Number(bv);
+    const bothNum = !Number.isNaN(an) && !Number.isNaN(bn);
+    if (bothNum) {
+      return dir === "asc" ? an - bn : bn - an;
+    }
+    const as = String(av).toLowerCase();
+    const bs = String(bv).toLowerCase();
+    if (as === bs) return 0;
+    return dir === "asc" ? (as < bs ? -1 : 1) : (as > bs ? -1 : 1);
+  });
+  return sorted;
+}
+
+function groupByVariationSku(rows) {
+  const map = new Map();
+  const list = [];
+  for (const row of rows) {
+    const key = row[VARIATION_COLUMN];
+    if (key === undefined || key === null) continue;
+    if (!map.has(key)) {
+      map.set(key, [row]);
+      list.push(row);
+    } else {
+      map.get(key).push(row);
+    }
+  }
+  // Sort each group by ITEM_SKU ascending so the first row is smallest ITEM_SKU
+  for (const [key, group] of map.entries()) {
+    group.sort((a, b) => {
+      const as = String(a.ITEM_SKU ?? "").toLowerCase();
+      const bs = String(b.ITEM_SKU ?? "").toLowerCase();
+      if (as === bs) return 0;
+      return as < bs ? -1 : 1;
+    });
+    // Ensure the representative row in list is the first (smallest) ITEM_SKU
+    const idx = list.findIndex((r) => r[VARIATION_COLUMN] === key);
+    if (idx >= 0) list[idx] = group[0];
+  }
+  return { map, list };
+}
+
 async function runSearch() {
   const q = (searchInput.value || "").trim();
   const pageSize = Number(pageSizeSelect.value || 100);
@@ -414,6 +534,31 @@ async function runSearch() {
   lastResults = [];
   lastCount = 0;
 
+  const variationView = BRAND_VARIATION_VIEWS[currentBrand] || "public.master_pan_variations";
+  const [vSchema, vTable] = variationView.includes(".")
+    ? variationView.split(".")
+    : [null, variationView];
+
+  const variationQueryBase = vSchema
+    ? supabase.schema(vSchema).from(vTable)
+    : supabase.from(vTable);
+
+  let variationQuery = variationQueryBase.select(VARIATION_COLUMN, { count: "exact" });
+  if (q) {
+    variationQuery = variationQuery.ilike(VARIATION_COLUMN, `${q}%`);
+  }
+
+  const { data: variations, error: vError, count: vCount } = await variationQuery
+    .order(VARIATION_COLUMN, { ascending: true })
+    .range(from, to);
+
+  if (vError) {
+    setSearchStatus(`Search failed: ${vError.message}`);
+    return;
+  }
+
+  const variationList = (variations || []).map((r) => r[VARIATION_COLUMN]).filter(Boolean);
+
   const viewName = BRAND_VIEWS[currentBrand] || PRODUCT_VIEW;
   const [schemaName, tableName] = viewName.includes(".")
     ? viewName.split(".")
@@ -423,12 +568,23 @@ async function runSearch() {
     ? supabase.schema(schemaName).from(tableName)
     : supabase.from(tableName);
 
-  let query = productQuery.select("*", { count: "exact" });
-  if (q) {
-    query = query.ilike(VARIATION_COLUMN, `${q}%`);
+  let query = productQuery.select("*");
+  if (variationList.length > 0) {
+    query = query.in(VARIATION_COLUMN, variationList);
+  } else {
+    lastResults = [];
+    lastCount = vCount || 0;
+    lastImageMap = new Map();
+    resultsBox.innerHTML = "";
+    setSearchStatus(`${lastCount} total, 0 shown.`);
+    pageInfo.textContent = `Page ${currentPage} / ${Math.max(1, Math.ceil(lastCount / pageSize))}`;
+    prevPageBtn.disabled = currentPage <= 1;
+    nextPageBtn.disabled = currentPage >= Math.max(1, Math.ceil(lastCount / pageSize));
+    pageSelect.innerHTML = "";
+    return;
   }
 
-  const { data, error, count } = await query.range(from, to);
+  const { data, error } = await query.order(VARIATION_COLUMN, { ascending: true });
 
   if (error) {
     setSearchStatus(`Search failed: ${error.message}`);
@@ -436,7 +592,7 @@ async function runSearch() {
   }
 
   lastResults = data || [];
-  lastCount = count || 0;
+  lastCount = vCount || 0;
   exportBtn.disabled = lastResults.length === 0;
 
   const imageMap = new Map();
@@ -453,12 +609,22 @@ async function runSearch() {
 
   lastImageMap = imageMap;
   renderResults(lastResults, imageMap);
-  setSearchStatus(`${lastCount} result(s).`);
+  const groupedCount = groupByVariationSku(lastResults).list.length;
+  setSearchStatus(`${lastCount} total, ${groupedCount} shown.`);
 
   const totalPages = Math.max(1, Math.ceil(lastCount / pageSize));
   pageInfo.textContent = `Page ${currentPage} / ${totalPages}`;
   prevPageBtn.disabled = currentPage <= 1;
   nextPageBtn.disabled = currentPage >= totalPages;
+
+  pageSelect.innerHTML = "";
+  for (let p = 1; p <= totalPages; p += 1) {
+    const opt = document.createElement("option");
+    opt.value = String(p);
+    opt.textContent = `Page ${p}`;
+    if (p === currentPage) opt.selected = true;
+    pageSelect.appendChild(opt);
+  }
 }
 
 // Drag/drop
@@ -531,6 +697,14 @@ nextPageBtn.addEventListener("click", () => {
   const totalPages = Math.max(1, Math.ceil(lastCount / pageSize));
   if (currentPage < totalPages) {
     currentPage += 1;
+    runSearch();
+  }
+});
+
+pageSelect.addEventListener("change", () => {
+  const target = Number(pageSelect.value || 1);
+  if (target !== currentPage) {
+    currentPage = target;
     runSearch();
   }
 });
