@@ -24,10 +24,3 @@ export const BRAND_VARIATION_VIEWS = {
   DAYBREAK: "public.master_daybreak_variations",
   HEELCARE: "public.master_heelcare_variations",
 };
-
-export const BRAND_VARIATION_VIEWS = {
-  PAN: "public.master_pan_variations",
-  ARENA: "public.master_arena_variations",
-  DAYBREAK: "public.master_daybreak_variations",
-  HEELCARE: "public.master_heelcare_variations",
-};
