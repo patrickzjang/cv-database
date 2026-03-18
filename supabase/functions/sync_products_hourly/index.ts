@@ -12,8 +12,21 @@ const JST_APP_SECRET   = Deno.env.get("JST_APP_SECRET")!;
 const JST_ACCESS_TOKEN = Deno.env.get("JST_ACCESS_TOKEN")!;
 const JST_COMPANY_ID   = Deno.env.get("JST_COMPANY_ID")!;
 
-// ดึงสินค้าทีละช่วง (1 ชั่วโมง)
-const WINDOW_HOURS = 1;
+function readPositiveInt(name: string, fallback: number): number {
+  const raw = Deno.env.get(name);
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.warn(`${name} is invalid: "${raw}", fallback to ${fallback}`);
+    return fallback;
+  }
+  return parsed;
+}
+
+// ดึงสินค้าทีละช่วง (default 1 ชั่วโมง)
+const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 1);
+const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 100);
+const MAX_PAGES = readPositiveInt("SYNC_MAX_PAGES", 1000);
 
 // ---------- UTIL ----------
 function md5(input: string): string {
@@ -113,12 +126,17 @@ serve(async (_req) => {
       });
     }
 
-    const pageSize = 100;
     let pageIndex = 1;
+    let pagesFetched = 0;
     let totalInserted = 0;
     let totalRecords = 0;
+    const fromUnix = toUnixSeconds(fromTime);
+    const toUnix = toUnixSeconds(toTime);
 
     while (true) {
+      if (pagesFetched >= MAX_PAGES) {
+        throw new Error(`GetItemSkus exceeded MAX_PAGES=${MAX_PAGES}`);
+      }
       // 2) body ให้เหมือนกับที่คุณใช้ใน Postman (เปลี่ยนช่วงเวลาเป็น fromTime/toTime)
       const bodyGetItems = {
         requestModel: {
@@ -126,17 +144,18 @@ serve(async (_req) => {
           itemIds: [],
           enabled: null,
           isNoQuerySkuCombine: true,
-          modifiedBegin: toUnixSeconds(fromTime),
-          modifiedEnd:   toUnixSeconds(toTime),
+          modifiedBegin: fromUnix,
+          modifiedEnd: toUnix,
         },
         dataPage: {
-          pageSize,
+          pageSize: PAGE_SIZE,
           pageIndex,
         },
       };
 
       const json = await callJst("/api/Goods/GetItemSkus", bodyGetItems);
       const list = extractListFromData(json);
+      pagesFetched += 1;
 
       console.log(
         `GetItemSkus ${fromTime.toISOString()} - ${toTime.toISOString()}, page ${pageIndex}, got ${list.length}`,
@@ -172,17 +191,20 @@ serve(async (_req) => {
         .from("products_raw")
         .upsert(rows, { onConflict: "sku_id" });
 
-      if (insertResp.error) {
-        dbErrors.push(`insert products_raw: ${insertResp.error.message}`);
-      } else {
-        totalInserted += rows.length;
+      if (upsertResp.error) {
+        // Throw immediately — do NOT advance sync state if any batch fails.
+        // This ensures the failed window is retried on the next run rather
+        // than silently lost forever.
+        throw new Error(`upsert products_raw: ${upsertResp.error.message}`);
       }
 
-      if (list.length < pageSize) break;
+      totalInserted += rows.length;
+
+      if (list.length < PAGE_SIZE) break;
       pageIndex += 1;
     }
 
-    // 3) update state
+    // 3) update state — only reached if ALL upserts above succeeded
     const updateResp = await supabase
       .schema("jst_raw")
       .from("sync_state_products")
@@ -198,6 +220,7 @@ serve(async (_req) => {
         message: "product sync done",
         fromTime,
         toTime,
+        pagesFetched,
         totalRecords,
         totalInserted,
         dbErrors,

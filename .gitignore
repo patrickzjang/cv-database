@@ -1,0 +1,19 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Environment files — NEVER commit these, they contain secrets
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Supabase local
+supabase/.temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript build info
+*.tsbuildinfo

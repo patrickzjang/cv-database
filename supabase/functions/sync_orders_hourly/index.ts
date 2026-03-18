@@ -6,14 +6,28 @@ import md5Lib from "https://esm.sh/blueimp-md5@2.19.0";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
 
-const JST_BASE_URL     = Deno.env.get("JST_BASE_URL")!;
-const JST_APP_KEY      = Deno.env.get("JST_APP_KEY")!;
-const JST_APP_SECRET   = Deno.env.get("JST_APP_SECRET")!;
+const JST_BASE_URL = Deno.env.get("JST_BASE_URL")!;
+const JST_APP_KEY = Deno.env.get("JST_APP_KEY")!;
+const JST_APP_SECRET = Deno.env.get("JST_APP_SECRET")!;
 const JST_ACCESS_TOKEN = Deno.env.get("JST_ACCESS_TOKEN")!;
-const JST_COMPANY_ID   = Deno.env.get("JST_COMPANY_ID")!;
+const JST_COMPANY_ID = Deno.env.get("JST_COMPANY_ID")!;
 
-// ดึงทีละช่วง (ชั่วโมง) – 1 ชั่วโมง
-const WINDOW_HOURS = 1;
+function readPositiveInt(name: string, fallback: number): number {
+  const raw = Deno.env.get(name);
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.warn(`${name} is invalid: "${raw}", fallback to ${fallback}`);
+    return fallback;
+  }
+  return parsed;
+}
+
+// ดึงทีละช่วง (ชั่วโมง) – default 1 ชั่วโมง
+const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 1);
+const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 100);
+const MAX_PAGES = readPositiveInt("SYNC_MAX_PAGES", 1000);
+const DETAIL_BATCH_SIZE = readPositiveInt("SYNC_ORDER_DETAIL_BATCH_SIZE", 10);
 
 // ---------- UTIL ----------
 function md5(input: string): string {
@@ -22,12 +36,12 @@ function md5(input: string): string {
 
 function buildSign(bodyString: string, ts: string): string {
   const signSource =
-    "appkey="      + JST_APP_KEY +
-    "&appsecret="  + JST_APP_SECRET +
-    "&data="       + bodyString +
-    "&accesstoken="+ JST_ACCESS_TOKEN +
-    "&companyid="  + JST_COMPANY_ID +
-    "&ts="         + ts;
+    "appkey=" + JST_APP_KEY +
+    "&appsecret=" + JST_APP_SECRET +
+    "&data=" + bodyString +
+    "&accesstoken=" + JST_ACCESS_TOKEN +
+    "&companyid=" + JST_COMPANY_ID +
+    "&ts=" + ts;
 
   return md5(signSource);
 }
@@ -115,24 +129,30 @@ serve(async (_req) => {
     }
 
     // 2) GetOrders
-    const orderIds: number[] = [];
+    const orderIdSet = new Set<number>();
     let pageIndex = 1;
-    const pageSize = 100;
+    let pagesFetched = 0;
+    const fromUnix = toUnixSeconds(fromTime);
+    const toUnix = toUnixSeconds(toTime);
 
     while (true) {
+      if (pagesFetched >= MAX_PAGES) {
+        throw new Error(`GetOrders exceeded MAX_PAGES=${MAX_PAGES}`);
+      }
       const bodyGetOrders = {
         dataPage: {
-          pageSize,
+          pageSize: PAGE_SIZE,
           pageIndex,
         },
         requestModel: {
-          orderTimeBegin: toUnixSeconds(fromTime),
-          orderTimeEnd: toUnixSeconds(toTime),
+          orderTimeBegin: fromUnix,
+          orderTimeEnd: toUnix,
         },
       };
 
       const json = await callJst("/api/Order/GetOrders", bodyGetOrders);
       const list = extractListFromData(json);
+      pagesFetched += 1;
 
       console.log(
         `GetOrders ${fromTime.toISOString()} - ${toTime.toISOString()}, page ${pageIndex}, got ${list.length}`,
@@ -143,13 +163,18 @@ serve(async (_req) => {
       for (const o of list) {
         const id = (o as any).orderId;
         if (id !== undefined && id !== null) {
-          orderIds.push(Number(id));
+          const normalizedId = Number(id);
+          if (Number.isFinite(normalizedId)) {
+            orderIdSet.add(normalizedId);
+          }
         }
       }
 
-      if (list.length < pageSize) break;
+      if (list.length < PAGE_SIZE) break;
       pageIndex += 1;
     }
+
+    const orderIds = Array.from(orderIdSet);
 
     if (orderIds.length === 0) {
       // อัปเดต state แล้วจบ
@@ -170,11 +195,10 @@ serve(async (_req) => {
     }
 
     // 3) GetOrderDetailByIds → insert
-    const batchSize = 10;
     let insertedCount = 0;
 
-    for (let i = 0; i < orderIds.length; i += batchSize) {
-      const batch = orderIds.slice(i, i + batchSize);
+    for (let i = 0; i < orderIds.length; i += DETAIL_BATCH_SIZE) {
+      const batch = orderIds.slice(i, i + DETAIL_BATCH_SIZE);
 
       const bodyDetail = {
         orderIds: batch,
@@ -210,9 +234,9 @@ serve(async (_req) => {
 
         status: o.status,
         order_time: o.orderTime ? new Date(o.orderTime * 1000).toISOString() : null,
-        pay_time:   o.payTime   ? new Date(o.payTime   * 1000).toISOString() : null,
-        send_time:  o.sendTime  ? new Date(o.sendTime  * 1000).toISOString() : null,
-        sign_time:  o.signTime  ? new Date(o.signTime  * 1000).toISOString() : null,
+        pay_time: o.payTime ? new Date(o.payTime * 1000).toISOString() : null,
+        send_time: o.sendTime ? new Date(o.sendTime * 1000).toISOString() : null,
+        sign_time: o.signTime ? new Date(o.signTime * 1000).toISOString() : null,
 
         amount: o.amount,
         pay_amount: o.payAmount,
@@ -246,13 +270,16 @@ serve(async (_req) => {
         .upsert(rows, { onConflict: "order_id" });
 
       if (upsertResp.error) {
-        dbErrors.push(`upsert order_details_raw: ${upsertResp.error.message}`);
-      } else {
-        insertedCount += rows.length;
+        // Throw immediately — do NOT advance sync state if any batch fails.
+        // This ensures the failed window is retried on the next run rather
+        // than silently lost forever.
+        throw new Error(`upsert order_details_raw: ${upsertResp.error.message}`);
       }
+
+      insertedCount += rows.length;
     }
 
-    // 4) update state
+    // 4) update state — only reached if ALL upserts above succeeded
     const updateResp = await supabase
       .schema("jst_raw")
       .from("sync_state_orders")
@@ -268,6 +295,7 @@ serve(async (_req) => {
         message: "sync done",
         fromTime,
         toTime,
+        pagesFetched,
         orderCount: orderIds.length,
         detailInserted: insertedCount,
         dbErrors,

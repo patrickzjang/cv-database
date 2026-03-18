@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "master:update:dry-run": "node scripts/update_master_from_csv.js --dry-run",
+    "master:update:preview": "node scripts/update_master_from_csv.js --preview",
+    "master:update": "node scripts/update_master_from_csv.js"
   },
   "keywords": [],
   "author": "",
