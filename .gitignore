@@ -17,3 +17,6 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Photo archive workspace
+data/photo-archive/

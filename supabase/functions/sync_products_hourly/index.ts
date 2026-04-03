@@ -24,7 +24,7 @@ function readPositiveInt(name: string, fallback: number): number {
 }
 
 // ดึงสินค้าทีละช่วง (default 1 ชั่วโมง)
-const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 1);
+const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 24);
 const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 100);
 const MAX_PAGES = readPositiveInt("SYNC_MAX_PAGES", 1000);
 
