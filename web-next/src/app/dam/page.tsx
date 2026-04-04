@@ -64,6 +64,13 @@ export default function DAMBrowserPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [actioning, setActioning] = useState(false);
 
+  // Product info for selected asset
+  const [productInfo, setProductInfo] = useState<any | null>(null);
+  const [productLoading, setProductLoading] = useState(false);
+
+  // Product link cache for grid badges: sku -> boolean (has product)
+  const [productLinks, setProductLinks] = useState<Record<string, boolean | undefined>>({});
+
   const PAGE_SIZE = 48;
 
   // Auth guard
@@ -98,14 +105,60 @@ export default function DAMBrowserPage() {
   // Reset to page 1 on filter change
   useEffect(() => { setPage(1); }, [brand, type, status, q]);
 
+  // Fetch product info for a SKU
+  async function fetchProductInfo(sku: string) {
+    if (!sku) { setProductInfo(null); return; }
+    setProductLoading(true);
+    try {
+      const res = await fetch(`/api/products/${encodeURIComponent(sku)}/info`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setProductInfo(data);
+        setProductLinks(prev => ({ ...prev, [sku]: true }));
+      } else {
+        setProductInfo(null);
+        setProductLinks(prev => ({ ...prev, [sku]: false }));
+      }
+    } catch {
+      setProductInfo(null);
+    } finally {
+      setProductLoading(false);
+    }
+  }
+
+  // Check product links for visible assets
+  useEffect(() => {
+    const skus = [...new Set(assets.map(a => a.sku).filter(Boolean))];
+    const unchecked = skus.filter(s => productLinks[s] === undefined);
+    if (unchecked.length === 0) return;
+    // Batch check
+    Promise.all(unchecked.map(async sku => {
+      try {
+        const res = await fetch(`/api/products/${encodeURIComponent(sku)}/info`, { cache: "no-store" });
+        return { sku, exists: res.ok };
+      } catch {
+        return { sku, exists: false };
+      }
+    })).then(results => {
+      setProductLinks(prev => {
+        const next = { ...prev };
+        for (const r of results) next[r.sku] = r.exists;
+        return next;
+      });
+    });
+  }, [assets]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function openDetail(asset: DamAsset) {
     setSelected(asset);
     setDetailLoading(true);
+    setProductInfo(null);
     try {
       const res = await fetch(`/api/dam/assets/${asset.id}`, { cache: "no-store" });
       const data = await res.json();
       setSelected(data.asset);
       setEvents(data.events ?? []);
+      // Also fetch product info
+      fetchProductInfo(data.asset?.sku ?? asset.sku);
     } finally {
       setDetailLoading(false);
     }
@@ -207,6 +260,12 @@ export default function DAMBrowserPage() {
                   <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                     <span className="badge badge-brand">{asset.brand}</span>
                     <span className="badge" style={{ background: "transparent", border: `1px solid ${color}`, color }}>{asset.status}</span>
+                    {productLinks[asset.sku] === true && (
+                      <span className="badge" style={{ background: "rgba(0,180,216,0.08)", color: "var(--cyan)", borderColor: "rgba(0,180,216,0.2)" }} title="Linked to product">Product</span>
+                    )}
+                    {productLinks[asset.sku] === false && (
+                      <span className="badge" style={{ background: "rgba(0,0,0,0.03)", color: "var(--dim)", borderColor: "var(--border)" }} title="No product linked">No product</span>
+                    )}
                   </div>
                   <div className="asset-date">{fmtDate(asset.created_at)}</div>
                 </div>
