@@ -9,14 +9,18 @@ type DateRange = "today" | "7d" | "30d" | "month" | "custom";
 
 type Summary = {
   total_orders: number;
-  total_revenue: number;
-  paid_amount: number;
+  gross_revenue: number;
+  platform_discounts: number;
+  shipping_income: number;
+  shipping_cost: number;
+  net_revenue: number;
   avg_order_value: number;
 };
 
 type StatusRow = { status: string; cnt: number };
-type TrendRow  = { day: string; orders: number; revenue: number; paid: number };
+type TrendRow  = { day: string; orders: number; revenue: number; paid: number; net_revenue: number };
 type SkuRow    = { variation_sku: string; sku_name: string; total_qty: number; total_revenue: number };
+type PlatformRow = { platform: string; orders: number; gross_revenue: number; platform_discounts: number; net_revenue: number };
 
 type DashboardData = {
   from: string;
@@ -25,6 +29,7 @@ type DashboardData = {
   statusBreakdown: StatusRow[];
   dailyTrend: TrendRow[];
   topSkus: SkuRow[];
+  platformSummary: PlatformRow[];
   platformList: string[];
 };
 
@@ -94,6 +99,7 @@ function LineChart({ data }: { data: TrendRow[] }) {
   const yOrdOf   = (v: number) => PAD.top + innerH - (v / maxOrders) * innerH;
 
   const revPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xOf(i)},${yRevOf(d.revenue)}`).join(" ");
+  const netRevPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xOf(i)},${yRevOf(d.net_revenue ?? 0)}`).join(" ");
   const ordPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${xOf(i)},${yOrdOf(d.orders)}`).join(" ");
 
   // area fill for revenue
@@ -133,11 +139,14 @@ function LineChart({ data }: { data: TrendRow[] }) {
       {/* Area */}
       <path d={areaPath} fill="url(#revGrad)" />
 
-      {/* Revenue line */}
+      {/* Gross revenue line */}
       <path d={revPath} fill="none" stroke="#3d5afe" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
 
+      {/* Net revenue line */}
+      <path d={netRevPath} fill="none" stroke="#00c853" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+
       {/* Orders line */}
-      <path d={ordPath} fill="none" stroke="#5be49b" strokeWidth="1.8" strokeDasharray="5 3"
+      <path d={ordPath} fill="none" stroke="#f5a623" strokeWidth="1.8" strokeDasharray="5 3"
         strokeLinejoin="round" strokeLinecap="round" />
 
       {/* X labels */}
@@ -149,9 +158,11 @@ function LineChart({ data }: { data: TrendRow[] }) {
 
       {/* Legend */}
       <rect x={PAD.left} y={2} width={10} height={10} rx="2" fill="#3d5afe" />
-      <text x={PAD.left + 14} y={11} fontSize="10" fill="#e9f1ff">Revenue</text>
-      <line x1={PAD.left + 72} y1={7} x2={PAD.left + 82} y2={7} stroke="#5be49b" strokeWidth="2" strokeDasharray="4 2" />
-      <text x={PAD.left + 86} y={11} fontSize="10" fill="#e9f1ff">Orders</text>
+      <text x={PAD.left + 14} y={11} fontSize="10" fill="#e9f1ff">Gross</text>
+      <rect x={PAD.left + 52} y={2} width={10} height={10} rx="2" fill="#00c853" />
+      <text x={PAD.left + 66} y={11} fontSize="10" fill="#e9f1ff">Net</text>
+      <line x1={PAD.left + 92} y1={7} x2={PAD.left + 102} y2={7} stroke="#f5a623" strokeWidth="2" strokeDasharray="4 2" />
+      <text x={PAD.left + 106} y={11} fontSize="10" fill="#e9f1ff">Orders</text>
     </svg>
   );
 }
@@ -453,20 +464,38 @@ export default function DashboardPage() {
 
         {!loading && data && (
           <>
-            {/* ── Summary Cards ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 16 }}>
+            {/* ── Summary Cards (main row) ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 10 }}>
               {[
-                { label: "Total Orders",     value: fmtInt(summary?.total_orders),      icon: "📦", color: "#3d5afe" },
-                { label: "Total Revenue",    value: `฿${fmt(summary?.total_revenue)}`,   icon: "💰", color: "#f5a623" },
-                { label: "Paid Amount",      value: `฿${fmt(summary?.paid_amount)}`,     icon: "✅", color: "#5be49b" },
-                { label: "Avg Order Value",  value: `฿${fmt(summary?.avg_order_value)}`, icon: "📊", color: "#8ea1ff" },
-              ].map(({ label, value, icon, color }) => (
-                <div key={label} className="card" style={{ padding: "20px 22px" }}>
+                { label: "Total Orders",      value: fmtInt(summary?.total_orders),          icon: "📦", color: "#3d5afe" },
+                { label: "Gross Revenue",      value: `฿${fmt(summary?.gross_revenue)}`,     icon: "💰", color: "#f5a623" },
+                { label: "Net Revenue",        value: `฿${fmt(summary?.net_revenue)}`,       icon: "✅", color: "#00c853", tooltip: "After platform discounts" },
+                { label: "Platform Fees",      value: `-฿${fmt(summary?.platform_discounts)}`, icon: "🏷️", color: "#ff6b6b" },
+              ].map(({ label, value, icon, color, tooltip }) => (
+                <div key={label} className="card" style={{ padding: "20px 22px" }} title={tooltip}>
                   <div style={{ fontSize: "1.5rem", marginBottom: 6 }}>{icon}</div>
                   <div style={{ color: "var(--muted)", fontSize: "0.8rem", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
                   </div>
                   <div style={{ fontSize: "1.6rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Summary Cards (secondary row) ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 16 }}>
+              {[
+                { label: "Shipping Income", value: `฿${fmt(summary?.shipping_income)}`, color: "#8ea1ff" },
+                { label: "Shipping Cost",   value: `฿${fmt(summary?.shipping_cost)}`,   color: "#f5a623" },
+                { label: "Avg Order Value", value: `฿${fmt(summary?.avg_order_value)}`, color: "#9db0d0" },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="card" style={{ padding: "14px 18px" }}>
+                  <div style={{ color: "var(--muted)", fontSize: "0.75rem", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: "1.2rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>
                     {value}
                   </div>
                 </div>
@@ -508,6 +537,53 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+
+            {/* ── Platform Breakdown ── */}
+            {(data.platformSummary ?? []).length > 0 && (() => {
+              const sorted = [...data.platformSummary].sort((a, b) => (b.net_revenue ?? 0) - (a.net_revenue ?? 0));
+              const totalNet = sorted.reduce((s, r) => s + (r.net_revenue ?? 0), 0);
+              return (
+                <div className="card" style={{ marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 14, fontSize: "1rem" }}>Platform Breakdown</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
+                      <thead>
+                        <tr>
+                          <th>Platform</th>
+                          <th style={{ textAlign: "right" }}>Orders</th>
+                          <th style={{ textAlign: "right" }}>Gross Revenue</th>
+                          <th style={{ textAlign: "right" }}>Discounts</th>
+                          <th style={{ textAlign: "right" }}>Net Revenue</th>
+                          <th style={{ textAlign: "right" }}>% Share</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sorted.map((row) => {
+                          const pct = totalNet > 0 ? ((row.net_revenue ?? 0) / totalNet) * 100 : 0;
+                          return (
+                            <tr key={row.platform}>
+                              <td style={{ fontWeight: 600 }}>{row.platform}</td>
+                              <td style={{ textAlign: "right" }}>{fmtInt(row.orders)}</td>
+                              <td style={{ textAlign: "right" }}>{fmt(row.gross_revenue)}</td>
+                              <td style={{ textAlign: "right", color: "#ff6b6b" }}>-{fmt(row.platform_discounts)}</td>
+                              <td style={{ textAlign: "right", fontWeight: 700, color: "#00c853" }}>{fmt(row.net_revenue)}</td>
+                              <td style={{ textAlign: "right" }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                                  <div style={{ width: 60, height: 6, borderRadius: 999, background: "#0d1730", overflow: "hidden" }}>
+                                    <div style={{ height: "100%", borderRadius: 999, width: `${pct}%`, background: "linear-gradient(90deg, #3d5afe, #8ea1ff)", transition: "width 0.4s ease" }} />
+                                  </div>
+                                  <span style={{ minWidth: 40 }}>{pct.toFixed(1)}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── Top Selling SKUs ── */}
             <div className="card">

@@ -1,97 +1,16 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import md5Lib from "https://esm.sh/blueimp-md5@2.19.0";
+import { callJst, extractListFromData, readPositiveInt, toUnixSeconds } from "../_shared/jst-client.ts";
 
 // ---------- ENV ----------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
-
-const JST_BASE_URL = Deno.env.get("JST_BASE_URL")!;
-const JST_APP_KEY = Deno.env.get("JST_APP_KEY")!;
-const JST_APP_SECRET = Deno.env.get("JST_APP_SECRET")!;
-const JST_ACCESS_TOKEN = Deno.env.get("JST_ACCESS_TOKEN")!;
-const JST_COMPANY_ID = Deno.env.get("JST_COMPANY_ID")!;
-
-function readPositiveInt(name: string, fallback: number): number {
-  const raw = Deno.env.get(name);
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    console.warn(`${name} is invalid: "${raw}", fallback to ${fallback}`);
-    return fallback;
-  }
-  return parsed;
-}
 
 // ดึงทีละช่วง (ชั่วโมง) – default 1 ชั่วโมง
 const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 24);
 const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 100);
 const MAX_PAGES = readPositiveInt("SYNC_MAX_PAGES", 1000);
 const DETAIL_BATCH_SIZE = readPositiveInt("SYNC_ORDER_DETAIL_BATCH_SIZE", 10);
-
-// ---------- UTIL ----------
-function md5(input: string): string {
-  return md5Lib(input).toLowerCase();
-}
-
-function buildSign(bodyString: string, ts: string): string {
-  const signSource =
-    "appkey=" + JST_APP_KEY +
-    "&appsecret=" + JST_APP_SECRET +
-    "&data=" + bodyString +
-    "&accesstoken=" + JST_ACCESS_TOKEN +
-    "&companyid=" + JST_COMPANY_ID +
-    "&ts=" + ts;
-
-  return md5(signSource);
-}
-
-async function callJst(path: string, body: unknown) {
-  const ts = Date.now().toString();
-  const bodyString = JSON.stringify(body);
-  const sign = buildSign(bodyString, ts);
-
-  const res = await fetch(`${JST_BASE_URL}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "companyid": JST_COMPANY_ID,
-      "accesstoken": JST_ACCESS_TOKEN,
-      "ts": ts,
-      "sign": sign,
-      "appkey": JST_APP_KEY,
-      "appsecret": JST_APP_SECRET,
-    },
-    body: bodyString,
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`JST ${path} HTTP error: ${res.status} ${txt}`);
-  }
-
-  const json = await res.json();
-  if (json && typeof json === "object" && "errorCode" in json && json.errorCode) {
-    console.log(`JST ${path} error payload:`, JSON.stringify(json));
-    throw new Error(
-      `JST ${path} errorCode=${json.errorCode}, message=${json.message ?? ""}`,
-    );
-  }
-
-  return json;
-}
-
-function toUnixSeconds(d: Date): number {
-  return Math.floor(d.getTime() / 1000);
-}
-
-function extractListFromData(json: any): any[] {
-  if (!json) return [];
-  const data = (json as any).data;
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray((data as any).list)) return (data as any).list;
-  return [];
-}
 
 // ---------- MAIN ----------
 serve(async (_req) => {

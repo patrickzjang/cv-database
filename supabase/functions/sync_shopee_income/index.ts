@@ -6,7 +6,6 @@ import { callJst, extractListFromData, readPositiveInt, toUnixSeconds } from "..
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
 
-// ดึงสินค้าทีละช่วง (default 1 ชั่วโมง)
 const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 24);
 const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 100);
 const MAX_PAGES = readPositiveInt("SYNC_MAX_PAGES", 1000);
@@ -17,19 +16,19 @@ serve(async (_req) => {
   const dbErrors: string[] = [];
 
   try {
-    // 1) อ่าน state products
+    // 1) Read sync state
     const stateResp = await supabase
       .schema("jst_raw")
-      .from("sync_state_products")
+      .from("sync_state_income")
       .select("id, last_synced_at")
       .eq("id", 1)
       .maybeSingle();
 
     if (stateResp.error) {
-      dbErrors.push(`sync_state_products select: ${stateResp.error.message}`);
+      dbErrors.push(`sync_state_income select: ${stateResp.error.message}`);
     }
     if (!stateResp.data) {
-      throw new Error("sync_state_products row id=1 not found");
+      throw new Error("sync_state_income row id=1 not found");
     }
 
     const fromTime = new Date(stateResp.data.last_synced_at);
@@ -45,26 +44,23 @@ serve(async (_req) => {
       });
     }
 
+    // 2) Paginate GetOrderIncomes
     let pageIndex = 1;
     let pagesFetched = 0;
     let totalInserted = 0;
-    let totalRecords = 0;
     const fromUnix = toUnixSeconds(fromTime);
     const toUnix = toUnixSeconds(toTime);
 
     while (true) {
       if (pagesFetched >= MAX_PAGES) {
-        throw new Error(`GetItemSkus exceeded MAX_PAGES=${MAX_PAGES}`);
+        throw new Error(`GetOrderIncomes exceeded MAX_PAGES=${MAX_PAGES}`);
       }
-      // 2) body ให้เหมือนกับที่คุณใช้ใน Postman (เปลี่ยนช่วงเวลาเป็น fromTime/toTime)
-      const bodyGetItems = {
+
+      const body = {
         requestModel: {
-          skuIds: [],
-          itemIds: [],
-          enabled: null,
-          isNoQuerySkuCombine: true,
           modifiedBegin: fromUnix,
           modifiedEnd: toUnix,
+          shopId: 0,
         },
         dataPage: {
           pageSize: PAGE_SIZE,
@@ -72,49 +68,58 @@ serve(async (_req) => {
         },
       };
 
-      const json = await callJst("/api/Goods/GetItemSkus", bodyGetItems);
+      const json = await callJst("/api/Order/GetOrderIncomes", body);
       const list = extractListFromData(json);
       pagesFetched += 1;
 
       console.log(
-        `GetItemSkus ${fromTime.toISOString()} - ${toTime.toISOString()}, page ${pageIndex}, got ${list.length}`,
+        `GetOrderIncomes ${fromTime.toISOString()} - ${toTime.toISOString()}, page ${pageIndex}, got ${list.length}`,
       );
 
       if (!Array.isArray(list) || list.length === 0) break;
 
-      totalRecords += list.length;
+      // 3) Parse income data and map rows
+      const rows = list.map((o: any) => {
+        // The income data may be a JSON string that needs parsing
+        let incomeData: any = {};
+        try {
+          if (typeof o.data === "string") {
+            incomeData = JSON.parse(o.data);
+          } else if (o.data && typeof o.data === "object") {
+            incomeData = o.data;
+          }
+        } catch {
+          console.log(`Failed to parse income data for order ${o.orderId}, using raw`);
+          incomeData = {};
+        }
 
-      const rows = list.map((p: any) => ({
-        company_id:     p.companyId,
-        item_id:        p.itemId,
-        item_name:      p.itemName,
-        sku_id:         p.skuId,
-        sku_code:       p.skuCode,
-        full_name:      p.fullName,
-        brand_name:     p.brandName,
-        category_name:  p.categoryName,
-        cost_price:     p.costPrice,
-        sale_price:     p.salePrice,
-        bar_code:       p.barCode,
-        supplier_code:  p.supplierCode,
-        supplier_name:  p.supplierName,
-        enabled:        p.enabled,
-        modified_at:    p.modifiedTime
-                          ? new Date(p.modifiedTime * 1000).toISOString()
-                          : null,
-        raw_json:       p,
-      }));
+        return {
+          order_id:           o.orderId,
+          platform_order_id:  o.platformOrderId,
+          shop_id:            o.shopId,
+          shop_name:          o.shopName,
+          escrow_amount:      incomeData.escrowAmount ?? incomeData.escrow_amount ?? null,
+          buyer_total:        incomeData.buyerTotal ?? incomeData.buyer_total ?? null,
+          original_price:     incomeData.originalPrice ?? incomeData.original_price ?? null,
+          commission_fee:     incomeData.commissionFee ?? incomeData.commission_fee ?? null,
+          service_fee:        incomeData.serviceFee ?? incomeData.service_fee ?? null,
+          transaction_fee:    incomeData.transactionFee ?? incomeData.transaction_fee ?? null,
+          seller_discount:    incomeData.sellerDiscount ?? incomeData.seller_discount ?? null,
+          platform_discount:  incomeData.platformDiscount ?? incomeData.platform_discount ?? null,
+          shipping_fee_paid:  incomeData.shippingFeePaid ?? incomeData.shipping_fee_paid ?? null,
+          shipping_rebate:    incomeData.shippingRebate ?? incomeData.shipping_rebate ?? null,
+          raw_json:           { ...o, parsedIncome: incomeData },
+        };
+      });
 
+      // 4) Upsert on platform_order_id
       const upsertResp = await supabase
         .schema("jst_raw")
-        .from("products_raw")
-        .upsert(rows, { onConflict: "sku_id" });
+        .from("order_income_raw")
+        .upsert(rows, { onConflict: "platform_order_id" });
 
       if (upsertResp.error) {
-        // Throw immediately — do NOT advance sync state if any batch fails.
-        // This ensures the failed window is retried on the next run rather
-        // than silently lost forever.
-        throw new Error(`upsert products_raw: ${upsertResp.error.message}`);
+        throw new Error(`upsert order_income_raw: ${upsertResp.error.message}`);
       }
 
       totalInserted += rows.length;
@@ -123,31 +128,30 @@ serve(async (_req) => {
       pageIndex += 1;
     }
 
-    // 3) update state — only reached if ALL upserts above succeeded
+    // 5) Update sync state -- only on success
     const updateResp = await supabase
       .schema("jst_raw")
-      .from("sync_state_products")
+      .from("sync_state_income")
       .update({ last_synced_at: toTime.toISOString() })
       .eq("id", 1);
 
     if (updateResp.error) {
-      dbErrors.push(`update sync_state_products: ${updateResp.error.message}`);
+      dbErrors.push(`update sync_state_income: ${updateResp.error.message}`);
     }
 
     return new Response(
       JSON.stringify({
-        message: "product sync done",
+        message: "shopee income sync done",
         fromTime,
         toTime,
         pagesFetched,
-        totalRecords,
         totalInserted,
         dbErrors,
       }),
       { status: 200 },
     );
   } catch (e) {
-    console.error("EDGE_FN_FATAL_PRODUCTS", e);
+    console.error("EDGE_FN_FATAL_SHOPEE_INCOME", e);
     let msg = "unknown error";
     if (e && typeof e === "object" && "message" in e) {
       msg = String((e as any).message);

@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       : filteredPlatforms.length > 0 ? filteredPlatforms : null;
 
     // Run remaining queries in parallel
-    const [summaryRes, statusRes, trendRes, skusRes] = await Promise.all([
+    const [summaryRes, statusRes, trendRes, skusRes, platformSummaryRes] = await Promise.all([
       supabase.schema("jst_raw").rpc("dashboard_summary", {
         p_from: from.toISOString(),
         p_to:   to.toISOString(),
@@ -110,10 +110,15 @@ export async function POST(req: Request) {
         p_platforms: effectivePlatforms,
         p_limit: 20,
       }),
+      supabase.schema("jst_raw").rpc("dashboard_platform_summary", {
+        p_from: from.toISOString(),
+        p_to:   to.toISOString(),
+        p_platforms: effectivePlatforms,
+      }),
     ]);
 
     // Surface any DB errors
-    const errors = [summaryRes, statusRes, trendRes, skusRes, platformsRes]
+    const errors = [summaryRes, statusRes, trendRes, skusRes, platformsRes, platformSummaryRes]
       .map((r) => r.error?.message)
       .filter(Boolean);
     if (errors.length) {
@@ -127,14 +132,18 @@ export async function POST(req: Request) {
       to:   to.toISOString(),
       summary: summary ?? {
         total_orders: 0,
-        total_revenue: 0,
-        paid_amount: 0,
+        gross_revenue: 0,
+        platform_discounts: 0,
+        shipping_income: 0,
+        shipping_cost: 0,
+        net_revenue: 0,
         avg_order_value: 0,
       },
-      statusBreakdown: statusRes.data ?? [],
-      dailyTrend:      trendRes.data  ?? [],
-      topSkus:         skusRes.data   ?? [],
-      platformList:    filteredPlatforms,
+      statusBreakdown:  statusRes.data          ?? [],
+      dailyTrend:       trendRes.data           ?? [],
+      topSkus:          skusRes.data             ?? [],
+      platformSummary:  platformSummaryRes.data  ?? [],
+      platformList:     filteredPlatforms,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
