@@ -23,6 +23,9 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const brand = url.searchParams.get("brand") || undefined;
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.max(1, Math.min(1000, Number(url.searchParams.get("pageSize")) || 50));
+    const from = (page - 1) * pageSize;
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
@@ -31,21 +34,28 @@ export async function GET(req: Request) {
     let query = supabase
       .schema("core")
       .from("pricing_rules")
-      .select("*")
+      .select("*", { count: "exact" })
       .order("brand", { ascending: true })
-      .order("parents_sku", { ascending: true, nullsFirst: false });
+      .order("variation_sku", { ascending: true, nullsFirst: false })
+      .range(from, from + pageSize - 1);
 
     if (brand) {
-      query = query.eq("brand", brand.toUpperCase());
+      const b = brand.toUpperCase();
+      if (b === "PAN") {
+        query = query.in("brand", ["JN", "PN", "PAN"]);
+      } else {
+        query = query.eq("brand", b);
+      }
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data: data ?? [] });
+    const total = count ?? 0;
+    return NextResponse.json({ data: data ?? [], total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -88,32 +98,45 @@ export async function POST(req: Request) {
 
     const now = new Date().toISOString();
 
-    // Upsert rules one-by-one using raw SQL RPC to handle
-    // COALESCE(parents_sku, '') in the conflict target
     let upserted = 0;
     const errors: string[] = [];
 
-    // Batch via RPC for the COALESCE conflict handling
     for (const rule of rules) {
-      const { error } = await supabase.schema("core").rpc("upsert_pricing_rule", {
-        p_brand: String(rule.brand).toUpperCase(),
-        p_collection_key: rule.collection_key ?? null,
-        p_parents_sku: rule.parents_sku ?? null,
-        p_product_name: rule.product_name ?? null,
-        p_category: rule.category ?? null,
-        p_sub_category: rule.sub_category ?? null,
-        p_collection: rule.collection ?? null,
-        p_pct_rsp: rule.pct_rsp ?? null,
-        p_pct_campaign_a: rule.pct_campaign_a ?? null,
-        p_pct_mega: rule.pct_mega ?? null,
-        p_pct_flash_sale: rule.pct_flash_sale ?? null,
-        p_updated_at: now,
-      });
+      // Build update payload — only include provided fields
+      const updateData: Record<string, unknown> = { updated_at: now };
+      const fields = ["collection_key", "parents_sku", "variation_sku", "product_name", "category", "sub_category", "collection", "pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale", "pct_est_margin"];
+      for (const f of fields) {
+        if (f in rule) updateData[f] = rule[f];
+      }
 
-      if (error) {
-        errors.push(`Rule ${rule.brand}/${rule.parents_sku || "default"}: ${error.message}`);
+      if (rule.id) {
+        // Update existing rule by ID
+        const { error } = await supabase
+          .schema("core")
+          .from("pricing_rules")
+          .update(updateData)
+          .eq("id", rule.id);
+
+        if (error) {
+          errors.push(`Rule id=${rule.id}: ${error.message}`);
+        } else {
+          upserted++;
+        }
       } else {
-        upserted++;
+        // Insert new rule
+        const { error } = await supabase
+          .schema("core")
+          .from("pricing_rules")
+          .insert({
+            brand: String(rule.brand).toUpperCase(),
+            ...updateData,
+          });
+
+        if (error) {
+          errors.push(`New rule ${rule.brand}: ${error.message}`);
+        } else {
+          upserted++;
+        }
       }
     }
 

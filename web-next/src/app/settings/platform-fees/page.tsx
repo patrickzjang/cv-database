@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type PlatformFee = {
-  platform: string;
-  commission_pct: number;
-  service_fee_pct: number;
-  payment_fee_pct: number;
-  shipping_subsidy_pct: number;
-  other_fee_pct: number;
+  platform_name: string;
+  commission_rate: number;
+  service_fee_rate: number;
+  payment_fee_rate: number;
+  shipping_subsidy_rate: number;
+  other_fee_rate: number;
   notes: string;
 };
 
@@ -26,6 +26,7 @@ export default function PlatformFeesPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ row: number; col: string } | null>(null);
+  const [applyProgress, setApplyProgress] = useState<{ active: boolean; pct: number; label: string }>({ active: false, pct: 0, label: "" });
 
   const fetchFees = useCallback(async () => {
     setLoading(true);
@@ -37,7 +38,7 @@ export default function PlatformFeesPage() {
         if (res.status === 401) { router.push("/login"); return; }
         setError(json.error);
       } else {
-        setFees(json.fees ?? json ?? []);
+        setFees(json.data ?? json.fees ?? []);
       }
     } catch (e: any) {
       setError(e.message ?? "Network error");
@@ -62,8 +63,47 @@ export default function PlatformFeesPage() {
       if (json.error) {
         setError(json.error);
       } else {
-        setSuccess("Platform fees saved successfully.");
-        setTimeout(() => setSuccess(null), 3000);
+        setSuccess("Platform fees saved! Margin recalculation started in background.");
+
+        // Show progress bar
+        setApplyProgress({ active: true, pct: 10, label: "Recalculating margins..." });
+
+        // Fire-and-forget: recalculate margins in background
+        // This continues even if user navigates away
+        fetch("/api/products/pricing/apply-rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+          keepalive: true, // keeps request alive even if page unloads
+        }).then(async (r) => {
+          try {
+            const d = await r.json();
+            setApplyProgress({ active: true, pct: 100, label: `Done! ${d.updated?.toLocaleString() ?? ""} SKUs updated` });
+            setSuccess(`Margins updated for ${d.updated?.toLocaleString() ?? "all"} SKUs.`);
+            setTimeout(() => {
+              setApplyProgress({ active: false, pct: 0, label: "" });
+              setSuccess(null);
+            }, 4000);
+          } catch {
+            setApplyProgress({ active: false, pct: 0, label: "" });
+          }
+        }).catch(() => {
+          setApplyProgress({ active: false, pct: 0, label: "" });
+        });
+
+        // Animate progress bar while waiting
+        let pct = 10;
+        const timer = setInterval(() => {
+          pct = Math.min(pct + Math.random() * 8 + 2, 90);
+          setApplyProgress(prev => prev.active && prev.pct < 100
+            ? { active: true, pct: Math.round(pct), label: "Recalculating margins..." }
+            : prev
+          );
+        }, 800);
+        // Cleanup timer after 5 minutes max
+        setTimeout(() => clearInterval(timer), 300000);
+
+        setTimeout(() => setSuccess(null), 8000);
       }
     } catch (e: any) {
       setError(e.message ?? "Network error");
@@ -79,7 +119,8 @@ export default function PlatformFeesPage() {
       if (col === "notes") {
         row.notes = value;
       } else {
-        (row as any)[col] = parseFloat(value) || 0;
+        // Input is in % (e.g. "6.5"), convert back to decimal (0.065)
+        (row as any)[col] = (parseFloat(value) || 0) / 100;
       }
       next[index] = row;
       return next;
@@ -87,32 +128,34 @@ export default function PlatformFeesPage() {
   };
 
   const pctCols: { key: string; label: string }[] = [
-    { key: "commission_pct", label: "Commission %" },
-    { key: "service_fee_pct", label: "Service Fee %" },
-    { key: "payment_fee_pct", label: "Payment Fee %" },
-    { key: "shipping_subsidy_pct", label: "Shipping Subsidy %" },
-    { key: "other_fee_pct", label: "Other Fee %" },
+    { key: "commission_rate", label: "Commission %" },
+    { key: "service_fee_rate", label: "Service Fee %" },
+    { key: "payment_fee_rate", label: "Payment Fee %" },
+    { key: "shipping_subsidy_rate", label: "Shipping Subsidy %" },
+    { key: "other_fee_rate", label: "Other Fee %" },
   ];
 
   return (
     <div>
-      {/* ── Topbar ── */}
-      <div className="topbar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div className="brand">
-            <img src="/fav-logo-2026.png" alt="logo" className="logo" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-            <div>
-              <div className="brand-title">Platform Fee Settings</div>
-              <div className="brand-sub">Configure fee rates for P&L calculations</div>
+      <div className="page">
+        {/* ── Progress Bar ── */}
+        {applyProgress.active && (
+          <div className="card" style={{ marginBottom: 16, padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: "0.88rem" }}>
+              <span style={{ fontWeight: 600, color: "var(--text)" }}>{applyProgress.label}</span>
+              <span style={{ fontWeight: 700, color: "var(--app-accent)" }}>{applyProgress.pct}%</span>
+            </div>
+            <div style={{ height: 8, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 999,
+                background: "linear-gradient(90deg, var(--app-accent), #3b82f6)",
+                width: `${applyProgress.pct}%`,
+                transition: "width 0.4s ease",
+              }} />
             </div>
           </div>
-          <button className="ghost" onClick={() => router.push("/dashboard")} style={{ fontSize: "0.88rem" }}>
-            ← Dashboard
-          </button>
-        </div>
-      </div>
+        )}
 
-      <div className="page">
         {/* ── Info Panel ── */}
         <div className="card" style={{ marginBottom: 16, background: "rgba(0,180,216,0.04)", borderColor: "rgba(0,180,216,0.15)" }}>
           <div style={{ fontWeight: 700, marginBottom: 6, fontSize: "0.95rem" }}>
@@ -142,7 +185,7 @@ export default function PlatformFeesPage() {
 
         {/* ── Loading ── */}
         {loading && (
-          <div style={{ color: "var(--muted)", textAlign: "center", padding: "60px 0" }}>
+          <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "60px 0" }}>
             Loading fee configuration...
           </div>
         )}
@@ -158,20 +201,21 @@ export default function PlatformFeesPage() {
                     {pctCols.map(({ key, label }) => (
                       <th key={key} style={{ textAlign: "right", whiteSpace: "nowrap" }}>{label}</th>
                     ))}
+                    <th style={{ textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>Total Fee %</th>
                     <th>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {fees.length === 0 ? (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                      <td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: 24 }}>
                         No platform fees configured.
                       </td>
                     </tr>
                   ) : (
                     fees.map((row, i) => (
-                      <tr key={row.platform}>
-                        <td style={{ fontWeight: 600 }}>{row.platform}</td>
+                      <tr key={row.platform_name}>
+                        <td style={{ fontWeight: 600 }}>{row.platform_name}</td>
                         {pctCols.map(({ key }) => {
                           const isEditing = editingCell?.row === i && editingCell?.col === key;
                           const val = (row as any)[key] as number;
@@ -183,7 +227,7 @@ export default function PlatformFeesPage() {
                                   type="number"
                                   step="0.1"
                                   autoFocus
-                                  defaultValue={val}
+                                  defaultValue={val != null ? (val * 100).toFixed(1) : 0}
                                   onBlur={(e) => {
                                     updateFee(i, key, e.target.value);
                                     setEditingCell(null);
@@ -206,12 +250,19 @@ export default function PlatformFeesPage() {
                                   transition: "background 0.15s" }}
                                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
                                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-                                  {val.toFixed(1)}%
+                                  {val != null ? `${(val * 100).toFixed(1)}%` : "–"}
                                 </span>
                               )}
                             </td>
                           );
                         })}
+                        <td style={{ textAlign: "right", fontWeight: 700, fontSize: "0.9rem", color: "var(--app-accent)" }}>
+                          {(() => {
+                            const total = (Number(row.commission_rate) || 0) + (Number(row.service_fee_rate) || 0) +
+                              (Number(row.payment_fee_rate) || 0) + (Number(row.shipping_subsidy_rate) || 0) + (Number(row.other_fee_rate) || 0);
+                            return `${(total * 100).toFixed(1)}%`;
+                          })()}
+                        </td>
                         <td>
                           {editingCell?.row === i && editingCell?.col === "notes" ? (
                             <input
@@ -236,7 +287,7 @@ export default function PlatformFeesPage() {
                               }}
                             />
                           ) : (
-                            <span style={{ cursor: "pointer", color: row.notes ? "var(--text)" : "var(--muted)", fontSize: "0.88rem" }}
+                            <span style={{ cursor: "pointer", color: row.notes ? "var(--text)" : "var(--text-muted)", fontSize: "0.88rem" }}
                               onClick={() => setEditingCell({ row: i, col: "notes" })}>
                               {row.notes || "Click to add note"}
                             </span>

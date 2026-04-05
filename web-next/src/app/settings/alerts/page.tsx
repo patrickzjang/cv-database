@@ -208,22 +208,6 @@ export default function AlertsSettingsPage() {
 
   return (
     <div>
-      {/* ── Topbar ── */}
-      <div className="topbar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div className="brand">
-            <img src="/fav-logo-2026.png" alt="logo" className="logo" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-            <div>
-              <div className="brand-title">Stock Alert Settings</div>
-              <div className="brand-sub">Configure low-stock and reorder alerts</div>
-            </div>
-          </div>
-          <button className="ghost" onClick={() => router.push("/dashboard")} style={{ fontSize: "0.88rem" }}>
-            ← Dashboard
-          </button>
-        </div>
-      </div>
-
       <div className="page">
         {/* ── Error / Success ── */}
         {error && (
@@ -242,7 +226,7 @@ export default function AlertsSettingsPage() {
         {/* ── Summary Cards ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 16 }}>
           <div className="card" style={{ padding: "18px 22px" }}>
-            <div style={{ color: "var(--muted)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
               Total Configured
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--text)" }}>
@@ -250,7 +234,7 @@ export default function AlertsSettingsPage() {
             </div>
           </div>
           <div className="card" style={{ padding: "18px 22px", background: "rgba(217,119,6,0.04)" }}>
-            <div style={{ color: "var(--muted)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
               Low Stock Alerts
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--warn)" }}>
@@ -258,7 +242,7 @@ export default function AlertsSettingsPage() {
             </div>
           </div>
           <div className="card" style={{ padding: "18px 22px", background: "rgba(220,38,38,0.04)" }}>
-            <div style={{ color: "var(--muted)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
               Out of Stock
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--error)" }}>
@@ -299,7 +283,7 @@ export default function AlertsSettingsPage() {
               <div style={{ fontWeight: 700, marginBottom: 12, fontSize: "0.95rem" }}>Add New Alert</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
                 <div ref={suggestRef} style={{ position: "relative" }}>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>SKU Code</label>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>SKU Code</label>
                   <input
                     type="text"
                     value={newAlert.sku_code}
@@ -330,26 +314,26 @@ export default function AlertsSettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Brand</label>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Brand</label>
                   <input type="text" value={newAlert.brand}
                     onChange={(e) => setNewAlert((p) => ({ ...p, brand: e.target.value }))}
                     placeholder="e.g. ARENA"
                     style={{ width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: "0.88rem" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Min Stock</label>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Min Stock</label>
                   <input type="number" value={newAlert.min_stock}
                     onChange={(e) => setNewAlert((p) => ({ ...p, min_stock: parseInt(e.target.value) || 0 }))}
                     style={{ width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: "0.88rem" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Reorder Qty</label>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Reorder Qty</label>
                   <input type="number" value={newAlert.reorder_qty}
                     onChange={(e) => setNewAlert((p) => ({ ...p, reorder_qty: parseInt(e.target.value) || 0 }))}
                     style={{ width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: "0.88rem" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Lead Days</label>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>Lead Days</label>
                   <input type="number" value={newAlert.lead_days}
                     onChange={(e) => setNewAlert((p) => ({ ...p, lead_days: parseInt(e.target.value) || 0 }))}
                     style={{ width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: "0.88rem" }} />
@@ -367,7 +351,7 @@ export default function AlertsSettingsPage() {
 
         {/* ── Loading ── */}
         {loading && (
-          <div style={{ color: "var(--muted)", textAlign: "center", padding: "60px 0" }}>
+          <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "60px 0" }}>
             Loading alert configurations...
           </div>
         )}
@@ -392,7 +376,7 @@ export default function AlertsSettingsPage() {
                 <tbody>
                   {configs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                      <td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: 24 }}>
                         No alert configurations. Click &quot;Add Alert&quot; to create one.
                       </td>
                     </tr>

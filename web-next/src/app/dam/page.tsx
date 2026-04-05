@@ -240,7 +240,7 @@ export default function DAMBrowserPage() {
         <div className="dam-grid">
           {assets.map(asset => {
             const thumb = thumbnailUrl(asset);
-            const color = STATUS_COLOR[asset.status] ?? "var(--muted)";
+            const color = STATUS_COLOR[asset.status] ?? "var(--text-muted)";
             return (
               <div key={asset.id} className="asset-card" onClick={() => openDetail(asset)}>
                 <div className="asset-thumb">
@@ -291,13 +291,13 @@ export default function DAMBrowserPage() {
             <div className="modal-header">
               <div>
                 <div className="modal-title" style={{ fontFamily: "monospace", fontSize: "1.1rem" }}>{selected.sku}</div>
-                <div style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 2 }}>{selected.brand} · {selected.asset_type} · {fmtDate(selected.created_at)}</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginTop: 2 }}>{selected.brand} · {selected.asset_type} · {fmtDate(selected.created_at)}</div>
               </div>
               <button className="ghost" style={{ padding: "6px 12px" }} onClick={() => setSelected(null)}>✕ Close</button>
             </div>
 
             {detailLoading ? (
-              <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>Loading…</div>
+              <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading…</div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 20 }}>
                 {/* Preview */}
@@ -326,10 +326,10 @@ export default function DAMBrowserPage() {
                   {/* Audit log */}
                   {events.length > 0 && (
                     <div style={{ marginTop: 16 }}>
-                      <div style={{ fontWeight: 700, marginBottom: 8, fontSize: "0.88rem", color: "var(--muted)" }}>ACTIVITY</div>
+                      <div style={{ fontWeight: 700, marginBottom: 8, fontSize: "0.88rem", color: "var(--text-muted)" }}>ACTIVITY</div>
                       <div style={{ display: "grid", gap: 6 }}>
                         {events.map((ev: any) => (
-                          <div key={ev.id} style={{ fontSize: "0.85rem", display: "flex", gap: 8, color: "var(--muted)" }}>
+                          <div key={ev.id} style={{ fontSize: "0.85rem", display: "flex", gap: 8, color: "var(--text-muted)" }}>
                             <span style={{ minWidth: 110 }}>{fmtDate(ev.created_at)}</span>
                             <span style={{ color: "var(--text)" }}>{ev.event.replace(/_/g, " ")}</span>
                             {ev.actor && <span>by {ev.actor}</span>}
@@ -344,11 +344,11 @@ export default function DAMBrowserPage() {
                 <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
                   {/* Status badge */}
                   <div>
-                    <div style={{ fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, marginBottom: 4 }}>STATUS</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600, marginBottom: 4 }}>STATUS</div>
                     <span className="badge" style={{
                       background: "transparent",
-                      border: `1px solid ${STATUS_COLOR[selected.status] ?? "var(--muted)"}`,
-                      color: STATUS_COLOR[selected.status] ?? "var(--muted)",
+                      border: `1px solid ${STATUS_COLOR[selected.status] ?? "var(--text-muted)"}`,
+                      color: STATUS_COLOR[selected.status] ?? "var(--text-muted)",
                       fontSize: "0.9rem",
                       padding: "4px 12px",
                     }}>
@@ -369,7 +369,7 @@ export default function DAMBrowserPage() {
                     ["Notes",    selected.notes],
                   ].filter(([, v]) => v).map(([label, value]) => (
                     <div key={String(label)}>
-                      <div style={{ fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, marginBottom: 2 }}>{String(label).toUpperCase()}</div>
+                      <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600, marginBottom: 2 }}>{String(label).toUpperCase()}</div>
                       <div style={{ fontSize: "0.9rem", fontFamily: label === "SKU" ? "monospace" : undefined }}>{String(value)}</div>
                     </div>
                   ))}

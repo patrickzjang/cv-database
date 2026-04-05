@@ -1,3 +1,7 @@
+-- Drop old functions first (return type changed)
+DROP FUNCTION IF EXISTS jst_raw.dashboard_summary(timestamptz, timestamptz, text[]);
+DROP FUNCTION IF EXISTS jst_raw.dashboard_daily_trend(timestamptz, timestamptz, text[]);
+
 -- Fix dashboard_summary to show real financial metrics
 CREATE OR REPLACE FUNCTION jst_raw.dashboard_summary(
   p_from      timestamptz,

@@ -139,7 +139,7 @@ function MultiSelectFilter({
 
   return (
     <div>
-      <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{title}</div>
       <div ref={ref} style={{ position: "relative", minWidth: 160 }}>
         <button
           className="ghost"
@@ -163,7 +163,7 @@ function MultiSelectFilter({
               style={{ width: "100%", textAlign: "left", marginBottom: 4,
                 background: allSelected ? "rgba(0,180,216,0.08)" : "transparent",
                 borderColor: allSelected ? "rgba(0,180,216,0.25)" : "transparent",
-                color: allSelected ? "var(--cyan)" : "var(--muted)" }}
+                color: allSelected ? "var(--cyan)" : "var(--text-muted)" }}
               onClick={() => { onChange([]); setOpen(false); }}
             >
               {allLabel}
@@ -176,7 +176,7 @@ function MultiSelectFilter({
                   style={{ width: "100%", textAlign: "left",
                     background: active ? "rgba(0,180,216,0.08)" : "transparent",
                     borderColor: active ? "rgba(0,180,216,0.25)" : "transparent",
-                    color: active ? "var(--text)" : "var(--muted)",
+                    color: active ? "var(--text)" : "var(--text-muted)",
                     display: "flex", alignItems: "center", gap: 8 }}
                   onClick={() => toggle(code)}
                 >
@@ -207,7 +207,7 @@ function PLChart({ data }: { data: DailyTrendRow[] }) {
 
   if (!data.length) {
     return (
-      <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
+      <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
         No data
       </div>
     );
@@ -255,7 +255,7 @@ function PLChart({ data }: { data: DailyTrendRow[] }) {
           <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y}
             stroke="var(--border)" strokeWidth="1" strokeDasharray="3 4" />
           <text x={PAD.left - 6} y={t.y + 4} textAnchor="end"
-            fontSize="10" fill="var(--muted)">{t.label}</text>
+            fontSize="10" fill="var(--text-muted)">{t.label}</text>
         </g>
       ))}
 
@@ -270,23 +270,23 @@ function PLChart({ data }: { data: DailyTrendRow[] }) {
       <path d={profitPath} fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
 
       {/* COGS line (gray dashed) */}
-      <path d={cogsPath} fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeDasharray="5 3"
+      <path d={cogsPath} fill="none" stroke="var(--text-muted)" strokeWidth="1.8" strokeDasharray="5 3"
         strokeLinejoin="round" strokeLinecap="round" />
 
       {/* X labels */}
       {xLabels.map(({ i, label }) => (
-        <text key={i} x={xOf(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="var(--muted)">
+        <text key={i} x={xOf(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="var(--text-muted)">
           {label}
         </text>
       ))}
 
       {/* Legend */}
       <rect x={PAD.left} y={4} width={10} height={10} rx="2" fill="var(--cyan)" />
-      <text x={PAD.left + 14} y={12} fontSize="10" fill="var(--muted)">Revenue</text>
+      <text x={PAD.left + 14} y={12} fontSize="10" fill="var(--text-muted)">Revenue</text>
       <rect x={PAD.left + 70} y={4} width={10} height={10} rx="2" fill="var(--ok)" />
-      <text x={PAD.left + 84} y={12} fontSize="10" fill="var(--muted)">Net Profit</text>
-      <line x1={PAD.left + 148} y1={9} x2={PAD.left + 162} y2={9} stroke="var(--muted)" strokeWidth="2" strokeDasharray="4 2" />
-      <text x={PAD.left + 166} y={12} fontSize="10" fill="var(--muted)">COGS</text>
+      <text x={PAD.left + 84} y={12} fontSize="10" fill="var(--text-muted)">Net Profit</text>
+      <line x1={PAD.left + 148} y1={9} x2={PAD.left + 162} y2={9} stroke="var(--text-muted)" strokeWidth="2" strokeDasharray="4 2" />
+      <text x={PAD.left + 166} y={12} fontSize="10" fill="var(--text-muted)">COGS</text>
     </svg>
   );
 }
@@ -444,35 +444,12 @@ export default function ProfitLossPage() {
 
   return (
     <div>
-      {/* ── Topbar ── */}
-      <div className="topbar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div className="brand">
-            <img src="/fav-logo-2026.png" alt="logo" className="logo" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-            <div>
-              <div className="brand-title">Profit & Loss Report</div>
-              <div className="brand-sub">Revenue, costs, and profitability analysis</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {data && (
-              <button className="ghost" onClick={() => exportCSV(data)} style={{ fontSize: "0.88rem" }}>
-                Export CSV
-              </button>
-            )}
-            <button className="ghost" onClick={() => router.push("/dashboard")} style={{ fontSize: "0.88rem" }}>
-              ← Dashboard
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="page">
         {/* ── Filters ── */}
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div>
-              <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>TIME RANGE</div>
+              <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>TIME RANGE</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {DATE_RANGES.map(({ key, label }) => (
                   <button key={key}
@@ -488,11 +465,11 @@ export default function ProfitLossPage() {
             {dateRange === "custom" && (
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>FROM</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 4 }}>FROM</div>
                   <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
                 </div>
                 <div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>TO</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 4 }}>TO</div>
                   <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
                 </div>
                 <button className="primary" onClick={fetchReport}
@@ -522,7 +499,7 @@ export default function ProfitLossPage() {
 
         {/* ── Loading ── */}
         {loading && (
-          <div style={{ color: "var(--muted)", textAlign: "center", padding: "60px 0" }}>
+          <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "60px 0" }}>
             Loading report...
           </div>
         )}
@@ -533,13 +510,13 @@ export default function ProfitLossPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 16 }}>
               {[
                 { label: "Gross Revenue", value: `฿${fmt(summary?.gross_revenue)}`, color: "var(--ok)", bg: "rgba(5,150,105,0.06)" },
-                { label: "COGS", value: `฿${fmt(summary?.cogs)}`, color: "var(--muted)", bg: "var(--surface-2)" },
+                { label: "COGS", value: `฿${fmt(summary?.cogs)}`, color: "var(--text-muted)", bg: "var(--surface-2)" },
                 { label: "Gross Profit", value: `฿${fmt(summary?.gross_profit)}`, color: "var(--cyan)", bg: "rgba(0,180,216,0.06)" },
                 { label: "Platform Fees", value: `-฿${fmt(summary?.platform_fees)}`, color: "var(--error)", bg: "rgba(220,38,38,0.06)" },
-                { label: "Shipping Net", value: `฿${fmt(summary?.shipping_net)}`, color: "var(--muted)", bg: "var(--surface-2)" },
+                { label: "Shipping Net", value: `฿${fmt(summary?.shipping_net)}`, color: "var(--text-muted)", bg: "var(--surface-2)" },
               ].map(({ label, value, color, bg }) => (
                 <div key={label} className="card" style={{ padding: "18px 20px", background: bg }}>
-                  <div style={{ color: "var(--muted)", fontSize: "0.75rem", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
                   </div>
                   <div style={{ fontSize: "1.3rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>
@@ -555,7 +532,7 @@ export default function ProfitLossPage() {
               background: (summary?.net_profit ?? 0) >= 0 ? "rgba(5,150,105,0.06)" : "rgba(220,38,38,0.06)",
               border: `1px solid ${(summary?.net_profit ?? 0) >= 0 ? "rgba(5,150,105,0.2)" : "rgba(220,38,38,0.2)"}`,
             }}>
-              <div style={{ color: "var(--muted)", fontSize: "0.8rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+              <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                 Net Profit
               </div>
               <div style={{
@@ -564,7 +541,7 @@ export default function ProfitLossPage() {
               }}>
                 ฿{fmt(summary?.net_profit)}
               </div>
-              <div style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: 4 }}>
+              <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: 4 }}>
                 Gross Profit - Platform Fees + Shipping Net
               </div>
             </div>
@@ -671,7 +648,7 @@ export default function ProfitLossPage() {
                 </div>
               </div>
               {skuData.length === 0 ? (
-                <div style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>No data</div>
+                <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 20 }}>No data</div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
@@ -690,9 +667,9 @@ export default function ProfitLossPage() {
                     <tbody>
                       {skuData.map((row, i) => (
                         <tr key={row.sku}>
-                          <td style={{ color: "var(--muted)", textAlign: "center" }}>{i + 1}</td>
+                          <td style={{ color: "var(--text-muted)", textAlign: "center" }}>{i + 1}</td>
                           <td style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--purple)" }}>{row.sku}</td>
-                          <td style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{row.name ?? "–"}</td>
+                          <td style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>{row.name ?? "–"}</td>
                           <td style={{ textAlign: "right" }}>{fmtInt(row.qty_sold)}</td>
                           <td style={{ textAlign: "right" }}>{fmt(row.revenue)}</td>
                           <td style={{ textAlign: "right" }}>{fmt(row.cost)}</td>
@@ -714,7 +691,7 @@ export default function ProfitLossPage() {
 
         {/* Empty state */}
         {!loading && !data && !error && (
-          <div style={{ textAlign: "center", padding: "80px 0", color: "var(--muted)" }}>
+          <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-muted)" }}>
             <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>📊</div>
             <div style={{ fontSize: "1.1rem" }}>Loading report...</div>
           </div>

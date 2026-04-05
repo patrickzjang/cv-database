@@ -274,7 +274,7 @@ export default function DAMUploadPage() {
             <button className="ghost" onClick={() => setQueue([])} disabled={uploading}>
               Clear all
             </button>
-            <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
+            <span style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
               {done > 0 && <span style={{ color: "var(--ok)", marginRight: 12 }}>✓ {done} done</span>}
               {errored > 0 && <span style={{ color: "var(--error)" }}>✗ {errored} failed</span>}
             </span>
@@ -351,7 +351,7 @@ export default function DAMUploadPage() {
                         <div className="progress-track" style={{ marginBottom: 6 }}>
                           <div className="progress-fill" style={{ width: `${item.progress}%` }} />
                         </div>
-                        <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>Uploading… {item.progress}%</div>
+                        <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Uploading… {item.progress}%</div>
                       </>
                     )}
                     {item.state === "processing" && (

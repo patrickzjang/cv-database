@@ -56,13 +56,13 @@ function StepIndicator({ currentStep, totalSteps }: { currentStep: number; total
                 border: `2px solid ${color}`,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: "0.82rem", fontWeight: 700,
-                color: isDone || isActive ? "#fff" : "var(--muted)",
+                color: isDone || isActive ? "#fff" : "var(--text-muted)",
               }}>
                 {isDone ? "\u2713" : stepNum}
               </div>
               <div style={{
                 marginTop: 6, fontSize: "0.76rem", fontWeight: 600,
-                color: isActive ? "var(--text)" : "var(--muted)",
+                color: isActive ? "var(--text)" : "var(--text-muted)",
               }}>
                 {label}
               </div>
@@ -232,7 +232,7 @@ export default function ReturnsPage() {
             background: "var(--surface-2)", borderRadius: 12, padding: "16px 24px",
             margin: "20px 0", border: "1px solid var(--border)",
           }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
               Tracking Code
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700, letterSpacing: "0.05em", color: "var(--cyan)" }}>
@@ -276,12 +276,12 @@ export default function ReturnsPage() {
       {step === 1 && (
         <div className="card">
           <h3 style={{ fontSize: "1rem", marginBottom: 4 }}>Step 1: Look Up Your Order</h3>
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginBottom: 16 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: 16 }}>
             Enter your order ID and the phone number or email used for the order.
           </p>
           <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Platform Order ID</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Platform Order ID</label>
               <input
                 value={lookupOrderId}
                 onChange={(e) => setLookupOrderId(e.target.value)}
@@ -290,7 +290,7 @@ export default function ReturnsPage() {
               />
             </div>
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Phone or Email</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Phone or Email</label>
               <input
                 value={lookupContact}
                 onChange={(e) => setLookupContact(e.target.value)}
@@ -322,10 +322,10 @@ export default function ReturnsPage() {
       {step === 2 && orderData && (
         <div className="card">
           <h3 style={{ fontSize: "1rem", marginBottom: 4 }}>Step 2: Select Items to Return</h3>
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginBottom: 6 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: 6 }}>
             Order: <strong>{orderData.platform_order_id}</strong> | Date: {orderData.order_date}
           </p>
-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 16 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: 16 }}>
             Select the items you want to return and specify a reason for each.
           </p>
 
@@ -346,9 +346,9 @@ export default function ReturnsPage() {
                   />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: "0.92rem" }}>{item.name}</div>
-                    <div style={{ fontSize: "0.82rem", color: "var(--muted)", fontFamily: "monospace" }}>{item.sku}</div>
+                    <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontFamily: "monospace" }}>{item.sku}</div>
                   </div>
-                  <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
                     Qty: {item.maxQty}
                   </div>
                 </div>
@@ -356,7 +356,7 @@ export default function ReturnsPage() {
                 {item.selected && (
                   <div style={{ display: "flex", gap: 12, alignItems: "center", paddingLeft: 30, flexWrap: "wrap" }}>
                     <div>
-                      <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 2 }}>Return Qty</label>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>Return Qty</label>
                       <input
                         type="number"
                         value={item.qty}
@@ -367,7 +367,7 @@ export default function ReturnsPage() {
                       />
                     </div>
                     <div style={{ flex: 1, minWidth: 140 }}>
-                      <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 2 }}>Reason</label>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>Reason</label>
                       <select value={item.reason} onChange={(e) => updateItem(i, "reason", e.target.value)} style={{ width: "100%" }}>
                         {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
@@ -395,14 +395,14 @@ export default function ReturnsPage() {
       {step === 3 && (
         <div className="card">
           <h3 style={{ fontSize: "1rem", marginBottom: 4 }}>Step 3: Provide Details</h3>
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginBottom: 16 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: 16 }}>
             Add a description and any supporting photos for your return.
           </p>
 
           <div style={{ display: "grid", gap: 14, marginBottom: 20 }}>
             {/* Description */}
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -414,13 +414,13 @@ export default function ReturnsPage() {
 
             {/* Photo upload area */}
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Photos (optional)</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Photos (optional)</label>
               <div style={{
                 border: "2px dashed var(--border-2)", borderRadius: 12, padding: "20px 16px",
                 background: "var(--surface-2)", textAlign: "center", marginBottom: 8,
               }}>
                 <div style={{ fontSize: "1.5rem", marginBottom: 6 }}>&#128247;</div>
-                <div style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: 10 }}>
+                <div style={{ fontSize: "0.88rem", color: "var(--text-muted)", marginBottom: 10 }}>
                   Add photo URLs to show evidence of the issue
                 </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
@@ -460,15 +460,15 @@ export default function ReturnsPage() {
             {/* Contact info */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={{ gridColumn: "1 / -1" }}>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Your Name</label>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Your Name</label>
                 <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Full name" style={{ width: "100%" }} />
               </div>
               <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Phone</label>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Phone</label>
                 <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="0812345678" style={{ width: "100%" }} />
               </div>
               <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label>
+                <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Email</label>
                 <input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="name@email.com" style={{ width: "100%" }} />
               </div>
             </div>
@@ -502,14 +502,14 @@ export default function ReturnsPage() {
         margin: "40px 0 28px", display: "flex", alignItems: "center", gap: 16,
       }}>
         <div style={{ flex: 1, height: 1, background: "var(--border-2)" }} />
-        <span style={{ color: "var(--muted)", fontSize: "0.85rem", fontWeight: 600 }}>OR</span>
+        <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600 }}>OR</span>
         <div style={{ flex: 1, height: 1, background: "var(--border-2)" }} />
       </div>
 
       {/* ── Track Existing ── */}
       <div className="card" style={{ marginBottom: 40 }}>
         <h3 style={{ fontSize: "1rem", marginBottom: 4 }}>Track Existing Request</h3>
-        <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginBottom: 14 }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: 14 }}>
           Already submitted a return? Enter your tracking code to check the status.
         </p>
         <div style={{ display: "flex", gap: 8 }}>

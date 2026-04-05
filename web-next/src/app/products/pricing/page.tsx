@@ -58,7 +58,8 @@ const BRANDS = ["ALL", "DB", "PAN", "HC", "AN"] as const;
 const PLATFORMS = ["Shopee", "Lazada", "TTS", "Shopify"] as const;
 const TABS = ["Price Grid", "Pricing Rules", "Platform Mapping"] as const;
 type TabKey = (typeof TABS)[number];
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [50, 100, 250, 500, 1000] as const;
+const DEFAULT_PAGE_SIZE = 50;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,20 +70,30 @@ function fmt(n: number | null | undefined): string {
 
 function fmtPct(n: number | null | undefined): string {
   if (n == null || isNaN(n)) return "–";
-  return `${n.toFixed(1)}%`;
+  // Values stored as decimal (0.9 = 90%), display as percentage
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+// Margin stored as decimal (0.225 = 22.5%)
+function marginPct(margin: number | null | undefined): number | null {
+  if (margin == null || isNaN(margin)) return null;
+  // Auto-detect: if < 1 it's decimal, otherwise already %
+  return margin < 1 ? margin * 100 : margin;
 }
 
 function marginColor(margin: number | null | undefined): string {
-  if (margin == null || isNaN(margin)) return "transparent";
-  if (margin < 10) return "rgba(220, 38, 38, 0.12)";
-  if (margin < 20) return "rgba(217, 119, 6, 0.12)";
+  const pct = marginPct(margin);
+  if (pct == null) return "transparent";
+  if (pct < 10) return "rgba(220, 38, 38, 0.12)";
+  if (pct < 20) return "rgba(217, 119, 6, 0.12)";
   return "rgba(5, 150, 105, 0.12)";
 }
 
 function marginTextColor(margin: number | null | undefined): string {
-  if (margin == null || isNaN(margin)) return "var(--muted)";
-  if (margin < 10) return "var(--error)";
-  if (margin < 20) return "var(--warn)";
+  const pct = marginPct(margin);
+  if (pct == null) return "var(--text-muted)";
+  if (pct < 10) return "var(--error)";
+  if (pct < 20) return "var(--warn)";
   return "var(--ok)";
 }
 
@@ -114,16 +125,32 @@ function EditableCell({
     }
   }, [editing]);
 
+  const numVal = typeof value === "number" ? value : parseFloat(String(value ?? ""));
   const display =
     format === "percent"
-      ? fmtPct(typeof value === "number" ? value : parseFloat(String(value ?? "")))
+      ? fmtPct(numVal)
       : format === "number"
-        ? fmt(typeof value === "number" ? value : parseFloat(String(value ?? "")))
+        ? fmt(numVal)
         : String(value ?? "–");
+
+  // For percent: show "90" in the input (not "0.9"), save back as "0.9"
+  function startEdit() {
+    if (format === "percent" && !isNaN(numVal)) {
+      setDraft(String(Math.round(numVal * 1000) / 10)); // 0.9 -> "90"
+    } else {
+      setDraft(String(value ?? ""));
+    }
+    setEditing(true);
+  }
 
   function commit() {
     setEditing(false);
-    const trimmed = draft.trim();
+    let trimmed = draft.trim();
+    if (format === "percent") {
+      // Convert "90" back to "0.9"
+      const pctVal = parseFloat(trimmed);
+      if (!isNaN(pctVal)) trimmed = String(pctVal / 100);
+    }
     if (trimmed !== String(value ?? "")) {
       onSave(trimmed);
     }
@@ -161,10 +188,7 @@ function EditableCell({
 
   return (
     <span
-      onClick={() => {
-        setDraft(String(value ?? ""));
-        setEditing(true);
-      }}
+      onClick={startEdit}
       style={{
         cursor: "pointer",
         display: "block",
@@ -207,7 +231,7 @@ function ConfirmDialog({
         style={{ maxWidth: 460, padding: "28px 32px" }}
       >
         <h3 style={{ marginBottom: 12 }}>{title}</h3>
-        <p style={{ color: "var(--muted)", fontSize: "0.93rem", lineHeight: 1.6, marginBottom: 20 }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.93rem", lineHeight: 1.6, marginBottom: 20 }}>
           {message}
         </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -261,6 +285,83 @@ function Toast({
   );
 }
 
+// ─── Drag Fill Handle ───────────────────────────────────────────────────────
+
+function DragHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onMouseDown(e); }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        position: "absolute", right: 0, bottom: 0, width: 10, height: 10,
+        background: hover ? "var(--app-accent)" : "var(--app-accent)",
+        borderRadius: 2, cursor: "crosshair",
+        opacity: hover ? 1 : 0.35, transition: "opacity 0.15s",
+        border: "1.5px solid #fff",
+        zIndex: 2,
+      }}
+      title="Drag to fill"
+    />
+  );
+}
+
+// ─── Drag Fill Hook ─────────────────────────────────────────────────────────
+
+type DragFillState = {
+  active: boolean;
+  sourceRow: number;  // index in groupedGrid
+  sourceCol: string;  // field name
+  sourceValue: number | string | null;
+  targetRow: number;  // current hover row
+};
+
+function useDragFill(
+  onApply: (col: string, value: number | string | null, fromRow: number, toRow: number) => void,
+) {
+  const [drag, setDrag] = useState<DragFillState>({
+    active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1,
+  });
+
+  function startDrag(row: number, col: string, value: number | string | null) {
+    setDrag({ active: true, sourceRow: row, sourceCol: col, sourceValue: value, targetRow: row });
+    const handleMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const tr = el?.closest("tr");
+      if (tr) {
+        const idx = Number(tr.dataset.rowIdx);
+        if (!isNaN(idx)) {
+          setDrag((prev) => ({ ...prev, targetRow: idx }));
+        }
+      }
+    };
+    const handleUp = () => {
+      setDrag((prev) => {
+        if (prev.active && prev.targetRow !== prev.sourceRow) {
+          const from = Math.min(prev.sourceRow, prev.targetRow);
+          const to = Math.max(prev.sourceRow, prev.targetRow);
+          onApply(prev.sourceCol, prev.sourceValue, from, to);
+        }
+        return { active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1 };
+      });
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  }
+
+  function isHighlighted(row: number, col: string): boolean {
+    if (!drag.active || col !== drag.sourceCol) return false;
+    const from = Math.min(drag.sourceRow, drag.targetRow);
+    const to = Math.max(drag.sourceRow, drag.targetRow);
+    return row >= from && row <= to;
+  }
+
+  return { drag, startDrag, isHighlighted };
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function PricingPage() {
@@ -273,12 +374,79 @@ export default function PricingPage() {
   const [gridBrand, setGridBrand] = useState("ALL");
   const [gridSearch, setGridSearch] = useState("");
   const [gridPage, setGridPage] = useState(1);
+  const [gridPageSize, setGridPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [gridLoading, setGridLoading] = useState(false);
+  const [selectedVars, setSelectedVars] = useState<Set<string>>(new Set());
   const gridFileRef = useRef<HTMLInputElement>(null);
+
+  // ── Drag fill ──
+  const { drag: gridDrag, startDrag: gridStartDrag, isHighlighted: gridIsHighlighted } = useDragFill(
+    (col, value, fromRow, toRow) => {
+      // Apply value to all rows in range
+      const affected = groupedGrid.slice(fromRow, toRow + 1);
+      for (const group of affected) {
+        savePricingCell(group.rows[0], col, String(value ?? ""));
+      }
+      setToast({ message: `Filled ${affected.length} rows`, type: "ok" });
+    },
+  );
+
+  // ── Drag fill for rules ──
+  const { startDrag: rulesStartDrag, isHighlighted: rulesIsHighlighted } = useDragFill(
+    (col, value, fromRow, toRow) => {
+      const affected = rulesData.slice(fromRow, toRow + 1);
+      for (const rule of affected) {
+        saveRuleCell(rule, col, String(value ?? ""));
+      }
+      setToast({ message: `Filled ${affected.length} rules`, type: "ok" });
+    },
+  );
+
+  // ── Google Sheet Sync ──
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ active: boolean; pct: number; label: string }>({ active: false, pct: 0, label: "" });
+
+  async function syncGoogleSheet() {
+    setSyncing(true);
+    setSyncProgress({ active: true, pct: 10, label: "Downloading Google Sheet..." });
+
+    // Animate progress
+    let pct = 10;
+    const timer = setInterval(() => {
+      pct = Math.min(pct + Math.random() * 6 + 2, 90);
+      setSyncProgress((p) => p.active && p.pct < 100 ? { ...p, pct: Math.round(pct) } : p);
+    }, 600);
+
+    try {
+      setSyncProgress({ active: true, pct: 30, label: "Parsing & uploading data..." });
+      const res = await fetch("/api/master-data/sync-gsheet", { method: "POST" });
+      clearInterval(timer);
+      const json = await res.json();
+
+      if (res.ok && json.ok) {
+        setSyncProgress({ active: true, pct: 100, label: "Complete!" });
+        setToast({ message: `Synced! ${json.pricing_rows} SKUs + ${json.rules_rows} rules`, type: "ok" });
+        // Refresh current tab data
+        fetchGrid();
+        fetchRules();
+      } else {
+        setToast({ message: json.error ?? "Sync failed", type: "error" });
+      }
+    } catch {
+      clearInterval(timer);
+      setToast({ message: "Sync failed", type: "error" });
+    }
+
+    setTimeout(() => setSyncProgress({ active: false, pct: 0, label: "" }), 2000);
+    setSyncing(false);
+  }
 
   // ── Pricing Rules state ──
   const [rulesData, setRulesData] = useState<PricingRule[]>([]);
+  const [rulesTotal, setRulesTotal] = useState(0);
   const [rulesBrand, setRulesBrand] = useState("ALL");
+  const [rulesPage, setRulesPage] = useState(1);
+  const [rulesPageSize, setRulesPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
@@ -302,12 +470,13 @@ export default function PricingPage() {
       if (gridBrand !== "ALL") params.set("brand", gridBrand);
       if (gridSearch) params.set("q", gridSearch);
       params.set("page", String(gridPage));
-      params.set("limit", String(PAGE_SIZE));
+      params.set("pageSize", String(gridPageSize));
       const res = await fetch(`/api/products/pricing?${params}`);
       const json = await res.json();
       if (res.ok) {
         setGridData(json.data ?? []);
-        setGridTotal(json.total ?? 0);
+        setGridTotal(json.totalVariations ?? json.total ?? 0);
+        setSelectedVars(new Set()); // clear selection on page change
       } else {
         setToast({ message: json.error ?? "Failed to load pricing data", type: "error" });
       }
@@ -316,17 +485,20 @@ export default function PricingPage() {
     } finally {
       setGridLoading(false);
     }
-  }, [gridBrand, gridSearch, gridPage]);
+  }, [gridBrand, gridSearch, gridPage, gridPageSize]);
 
   const fetchRules = useCallback(async () => {
     setRulesLoading(true);
     try {
       const params = new URLSearchParams();
       if (rulesBrand !== "ALL") params.set("brand", rulesBrand);
+      params.set("page", String(rulesPage));
+      params.set("pageSize", String(rulesPageSize));
       const res = await fetch(`/api/products/pricing/rules?${params}`);
       const json = await res.json();
       if (res.ok) {
         setRulesData(json.data ?? []);
+        setRulesTotal(json.total ?? json.data?.length ?? 0);
       } else {
         setToast({ message: json.error ?? "Failed to load rules", type: "error" });
       }
@@ -335,7 +507,9 @@ export default function PricingPage() {
     } finally {
       setRulesLoading(false);
     }
-  }, [rulesBrand]);
+  }, [rulesBrand, rulesPage, rulesPageSize]);
+
+  useEffect(() => { setRulesPage(1); }, [rulesBrand, rulesPageSize]);
 
   const fetchMapping = useCallback(async () => {
     setMappingLoading(true);
@@ -343,8 +517,8 @@ export default function PricingPage() {
       const params = new URLSearchParams();
       if (mappingBrand !== "ALL") params.set("brand", mappingBrand);
       if (mappingPlatform !== "ALL") params.set("platform", mappingPlatform);
-      if (mappingStatus !== "all") params.set("status", mappingStatus);
-      const res = await fetch(`/api/products/pricing/mapping?${params}`);
+      if (mappingStatus !== "all") params.set("listing_status", mappingStatus);
+      const res = await fetch(`/api/products/platform-mapping?${params}`);
       const json = await res.json();
       if (res.ok) {
         setMappingData(json.data ?? []);
@@ -374,28 +548,34 @@ export default function PricingPage() {
   }, [activeTab, fetchMapping]);
 
   // Reset page when brand/search changes
-  useEffect(() => { setGridPage(1); }, [gridBrand, gridSearch]);
+  useEffect(() => { setGridPage(1); }, [gridBrand, gridSearch, gridPageSize]);
 
   // ── Save single cell ──────────────────────────────────────────────────────
 
+  // Save a pricing field and apply to ALL sizes under the same VARIATION_SKU
   async function savePricingCell(row: SkuPricing, field: string, value: string) {
+    const parsedVal = value === "" ? null : parseFloat(value);
+    // Find all ITEM_SKUs under this VARIATION_SKU
+    const siblings = gridData.filter((r) => r.variation_sku === row.variation_sku);
+    const items = siblings.map((s) => ({
+      item_sku: s.item_sku,
+      variation_sku: s.variation_sku,
+      [field]: parsedVal,
+    }));
+
     try {
       const res = await fetch("/api/products/pricing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          item_sku: row.item_sku,
-          variation_sku: row.variation_sku,
-          [field]: value === "" ? null : parseFloat(value),
-        }),
+        body: JSON.stringify({ items }),
       });
       if (res.ok) {
-        setToast({ message: "Saved", type: "ok" });
-        // Update local state optimistically
+        setToast({ message: `Saved to ${items.length} sizes`, type: "ok" });
+        // Update all siblings in local state
         setGridData((prev) =>
           prev.map((r) =>
-            r.item_sku === row.item_sku && r.variation_sku === row.variation_sku
-              ? { ...r, [field]: value === "" ? null : parseFloat(value) }
+            r.variation_sku === row.variation_sku
+              ? { ...r, [field]: parsedVal }
               : r
           )
         );
@@ -409,15 +589,21 @@ export default function PricingPage() {
   }
 
   async function saveRuleCell(rule: PricingRule, field: string, value: string) {
+    const textFields = ["product_name", "category", "sub_category", "collection", "collection_key", "parents_sku"];
+    const isText = textFields.includes(field);
+    const parsed = value === "" ? null : isText ? value : parseFloat(value);
+
     try {
       const res = await fetch("/api/products/pricing/rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: rule.id,
-          brand: rule.brand,
-          collection_key: rule.collection_key,
-          [field]: value === "" ? null : parseFloat(value),
+          rules: [{
+            id: rule.id,
+            brand: rule.brand,
+            collection_key: rule.collection_key,
+            [field]: parsed,
+          }],
         }),
       });
       if (res.ok) {
@@ -425,7 +611,7 @@ export default function PricingPage() {
         setRulesData((prev) =>
           prev.map((r) =>
             r.id === rule.id
-              ? { ...r, [field]: value === "" ? null : parseFloat(value) }
+              ? { ...r, [field]: parsed }
               : r
           )
         );
@@ -484,28 +670,72 @@ export default function PricingPage() {
 
   // ── Export CSV ─────────────────────────────────────────────────────────────
 
-  function exportCsv() {
-    if (!gridData.length) return;
+  function buildCsv(data: SkuPricing[]): string {
     const headers = [
       "ITEM_SKU", "VARIATION_SKU", "Description", "Brand", "RRP", "RSP",
       "Campaign A", "Mega", "Flash Sale", "Min Price", "COGS", "Margin%",
     ];
-    const rows = gridData.map((r) => [
+    const rows = data.map((r) => [
       r.item_sku, r.variation_sku, r.description ?? "", r.brand,
       r.rrp ?? "", r.rsp ?? "", r.price_campaign_a ?? "", r.price_mega ?? "",
       r.price_flash_sale ?? "", r.min_price ?? "", r.cogs_inc_vat ?? "",
-      r.est_margin != null ? r.est_margin.toFixed(1) : "",
+      marginPct(r.est_margin) != null ? marginPct(r.est_margin)!.toFixed(1) : "",
     ]);
-    const csv = [headers, ...rows].map((row) =>
+    return [headers, ...rows].map((row) =>
       row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")
     ).join("\n");
+  }
+
+  function downloadCsv(csv: string, filename: string) {
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `pricing-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportSelected() {
+    if (selectedVars.size === 0) {
+      setToast({ message: "No rows selected", type: "error" });
+      return;
+    }
+    const data = gridData.filter((r) => selectedVars.has(r.variation_sku));
+    downloadCsv(buildCsv(data), `pricing-selected-${new Date().toISOString().slice(0, 10)}.csv`);
+    setToast({ message: `Exported ${selectedVars.size} variations (${data.length} SKUs)`, type: "ok" });
+  }
+
+  async function exportAll() {
+    setToast({ message: "Exporting all data...", type: "ok" });
+    try {
+      // Fetch all pages
+      const allData: SkuPricing[] = [];
+      let page = 1;
+      while (true) {
+        const params = new URLSearchParams();
+        if (gridBrand !== "ALL") params.set("brand", gridBrand);
+        if (gridSearch) params.set("q", gridSearch);
+        params.set("page", String(page));
+        params.set("pageSize", "1000");
+        const res = await fetch(`/api/products/pricing?${params}`);
+        const json = await res.json();
+        const batch = json.data ?? [];
+        allData.push(...batch);
+        if (batch.length < 1000) break;
+        page++;
+      }
+      downloadCsv(buildCsv(allData), `pricing-all-${new Date().toISOString().slice(0, 10)}.csv`);
+      setToast({ message: `Exported ${allData.length} SKUs`, type: "ok" });
+    } catch {
+      setToast({ message: "Export failed", type: "error" });
+    }
+  }
+
+  function exportCsv() {
+    // Legacy: export current page
+    if (!gridData.length) return;
+    downloadCsv(buildCsv(gridData), `pricing-export-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   // ── Group grid data by variation_sku ───────────────────────────────────────
@@ -521,7 +751,8 @@ export default function PricingPage() {
     groupedGrid.push({ key, rows });
   }
 
-  const totalGridPages = Math.max(1, Math.ceil(gridTotal / PAGE_SIZE));
+  const varSkuCount = groupedGrid.length;
+  const totalGridPages = Math.max(1, Math.ceil(gridTotal / gridPageSize));
 
   // ── Search debounce ────────────────────────────────────────────────────────
 
@@ -538,39 +769,45 @@ export default function PricingPage() {
 
   return (
     <div>
-      {/* Topbar */}
-      <div className="topbar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div className="brand">
-            <img
-              src="/fav-logo-2026.png"
-              alt="logo"
-              className="logo"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-            <div>
-              <div className="brand-title">Pricing System</div>
-              <div className="brand-sub">SKU pricing, rules & platform mapping</div>
+      <div className="page" style={{ maxWidth: 1440 }}>
+        {/* ── Sync Progress Bar ── */}
+        {syncProgress.active && (
+          <div className="card" style={{ marginBottom: 16, padding: "14px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: "0.88rem" }}>
+              <span style={{ fontWeight: 600 }}>{syncProgress.label}</span>
+              <span style={{ fontWeight: 700, color: "var(--app-accent)" }}>{syncProgress.pct}%</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 999, background: "linear-gradient(90deg, var(--app-accent), #3b82f6)", width: `${syncProgress.pct}%`, transition: "width 0.4s ease" }} />
             </div>
           </div>
-          <button className="ghost" onClick={() => (window.location.href = "/")} style={{ fontSize: "0.9rem" }}>
-            ← Back
-          </button>
-        </div>
-      </div>
+        )}
 
-      <div className="page" style={{ maxWidth: 1440 }}>
-        {/* ── Tab Switcher ── */}
-        <div className="tabs" style={{ marginBottom: 20 }}>
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              className={`tab${activeTab === tab ? " active" : ""}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab}
-            </button>
-          ))}
+        {/* ── Tab Switcher + Sync Button ── */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div className="tabs" style={{ margin: 0 }}>
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                className={`tab${activeTab === tab ? " active" : ""}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+          <button
+            className="primary"
+            onClick={syncGoogleSheet}
+            disabled={syncing}
+            style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M2 8a6 6 0 0 1 10.3-4.1" /><path d="M14 8a6 6 0 0 1-10.3 4.1" />
+              <path d="M12 1v3.5h-3.5" /><path d="M4 15v-3.5h3.5" />
+            </svg>
+            {syncing ? "Syncing..." : "Sync Google Sheet"}
+          </button>
         </div>
 
         {/* ════════════════════════════════════════════════════════════════════
@@ -604,7 +841,7 @@ export default function PricingPage() {
                 />
 
                 {/* Actions */}
-                <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+                <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
                   <button className="ghost" onClick={() => gridFileRef.current?.click()}>
                     Import Excel
                   </button>
@@ -619,9 +856,33 @@ export default function PricingPage() {
                       e.target.value = "";
                     }}
                   />
-                  <button className="ghost" onClick={exportCsv} disabled={!gridData.length}>
-                    Export CSV
+                  <button className="ghost" onClick={exportSelected} disabled={selectedVars.size === 0}
+                    title={selectedVars.size > 0 ? `Export ${selectedVars.size} selected` : "Select rows first"}>
+                    Export Selected ({selectedVars.size})
                   </button>
+                  <button className="ghost" onClick={exportAll}>
+                    Export All
+                  </button>
+                </div>
+              </div>
+
+              {/* Info bar: total count + rows per page */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: "0.85rem" }}>
+                <span style={{ color: "var(--text-muted)" }}>
+                  Showing <strong style={{ color: "var(--text)" }}>{varSkuCount}</strong> of <strong style={{ color: "var(--text)" }}>{gridTotal.toLocaleString()}</strong> variations
+                  {selectedVars.size > 0 && <> &middot; <span style={{ color: "var(--app-accent)", fontWeight: 600 }}>{selectedVars.size} selected</span></>}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "var(--text-muted)" }}>Rows:</span>
+                  <select
+                    value={gridPageSize}
+                    onChange={(e) => setGridPageSize(Number(e.target.value))}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-2)", fontSize: "0.85rem", background: "var(--surface)" }}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -629,11 +890,11 @@ export default function PricingPage() {
             {/* Grid table */}
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {gridLoading ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   Loading pricing data...
                 </div>
               ) : gridData.length === 0 ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   No pricing data found. Try adjusting your filters or import from Excel.
                 </div>
               ) : (
@@ -641,10 +902,24 @@ export default function PricingPage() {
                   <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
                     <thead>
                       <tr>
-                        <th style={{ width: 140 }}>ITEM SKU</th>
-                        <th style={{ width: 130 }}>VAR SKU</th>
+                        <th style={{ width: 36, textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={groupedGrid.length > 0 && selectedVars.size === groupedGrid.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedVars(new Set(groupedGrid.map((g) => g.key)));
+                              } else {
+                                setSelectedVars(new Set());
+                              }
+                            }}
+                            style={{ cursor: "pointer" }}
+                          />
+                        </th>
+                        <th style={{ width: 150 }}>Variation SKU</th>
                         <th style={{ minWidth: 180 }}>Description</th>
                         <th style={{ width: 60 }}>Brand</th>
+                        <th style={{ width: 50, textAlign: "center" }}>Sizes</th>
                         <th style={{ width: 90, textAlign: "right" }}>RRP</th>
                         <th style={{ width: 90, textAlign: "right" }}>RSP</th>
                         <th style={{ width: 95, textAlign: "right" }}>Campaign A</th>
@@ -656,89 +931,75 @@ export default function PricingPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {groupedGrid.map((group, gi) =>
-                        group.rows.map((row, ri) => (
+                      {groupedGrid.map((group, gi) => {
+                        const rep = group.rows[0]; // representative row
+                        const sizeCount = group.rows.length;
+                        return (
                           <tr
-                            key={`${row.item_sku}-${row.variation_sku}`}
-                            style={{ background: groupRowBg(gi) }}
+                            key={group.key}
+                            data-row-idx={gi}
+                            style={{ background: selectedVars.has(group.key) ? "rgba(30,64,175,0.06)" : groupRowBg(gi) }}
                           >
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", fontWeight: 600 }}>
-                              {row.item_sku}
+                            <td style={{ textAlign: "center" }}>
+                              <input
+                                type="checkbox"
+                                checked={selectedVars.has(group.key)}
+                                onChange={(e) => {
+                                  setSelectedVars((prev) => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(group.key);
+                                    else next.delete(group.key);
+                                    return next;
+                                  });
+                                }}
+                                style={{ cursor: "pointer" }}
+                              />
                             </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--muted)" }}>
-                              {row.variation_sku}
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.84rem", fontWeight: 600 }}>
+                              <a href={`/products/${encodeURIComponent(group.key)}`} style={{ color: "var(--app-accent)", textDecoration: "none" }} title="View product detail">
+                                {group.key}
+                              </a>
                             </td>
-                            <td style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-                              {row.description ?? "–"}
+                            <td style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                              {rep.description ?? "–"}
                             </td>
                             <td>
-                              <span
-                                className="badge badge-brand"
-                                style={{ fontSize: "0.72rem" }}
-                              >
-                                {row.brand}
+                              <span className="badge badge-brand" style={{ fontSize: "0.72rem" }}>
+                                {rep.brand}
                               </span>
                             </td>
-                            <td style={{ textAlign: "right" }}>
-                              <EditableCell
-                                value={row.rrp}
-                                onSave={(v) => savePricingCell(row, "rrp", v)}
-                              />
+                            <td style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                              {sizeCount}
                             </td>
-                            <td style={{ textAlign: "right" }}>
-                              <EditableCell
-                                value={row.rsp}
-                                onSave={(v) => savePricingCell(row, "rsp", v)}
-                              />
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              <EditableCell
-                                value={row.price_campaign_a}
-                                onSave={(v) => savePricingCell(row, "price_campaign_a", v)}
-                              />
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              <EditableCell
-                                value={row.price_mega}
-                                onSave={(v) => savePricingCell(row, "price_mega", v)}
-                              />
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              <EditableCell
-                                value={row.price_flash_sale}
-                                onSave={(v) => savePricingCell(row, "price_flash_sale", v)}
-                              />
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              <EditableCell
-                                value={row.min_price}
-                                onSave={(v) => savePricingCell(row, "min_price", v)}
-                              />
-                            </td>
-                            <td style={{ textAlign: "right", color: "var(--muted)" }}>
-                              {fmt(row.cogs_inc_vat)}
+                            {(["rrp", "rsp", "price_campaign_a", "price_mega", "price_flash_sale", "min_price"] as const).map((col) => (
+                              <td key={col} style={{ textAlign: "right" }}>
+                                <span style={{ fontSize: "0.85rem" }}>{fmt((rep as any)[col])}</span>
+                              </td>
+                            ))}
+                            <td style={{ textAlign: "right", color: "var(--text-muted)" }}>
+                              {fmt(rep.cogs_inc_vat)}
                             </td>
                             <td
                               style={{
                                 textAlign: "right",
-                                background: marginColor(row.est_margin),
-                                color: marginTextColor(row.est_margin),
+                                background: marginColor(rep.est_margin),
+                                color: marginTextColor(rep.est_margin),
                                 fontWeight: 700,
                                 fontSize: "0.85rem",
                               }}
                             >
-                              {fmtPct(row.est_margin)}
+                              {marginPct(rep.est_margin) != null ? `${marginPct(rep.est_margin)!.toFixed(1)}%` : "–"}
                             </td>
                           </tr>
-                        ))
-                      )}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
 
               {/* Pagination */}
-              {gridTotal > PAGE_SIZE && (
+              {totalGridPages > 1 && (
                 <div
                   className="pager"
                   style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}
@@ -762,8 +1023,8 @@ export default function PricingPage() {
                   >
                     Next
                   </button>
-                  <span style={{ color: "var(--muted)", fontSize: "0.82rem", marginLeft: "auto" }}>
-                    {gridTotal.toLocaleString("th-TH")} total rows
+                  <span style={{ color: "var(--text-muted)", fontSize: "0.82rem", marginLeft: "auto" }}>
+                    {gridTotal.toLocaleString("th-TH")} total variations
                   </span>
                 </div>
               )}
@@ -802,7 +1063,7 @@ export default function PricingPage() {
                     style={{ display: "none" }}
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) handleImport(f, "/api/products/pricing/rules/import", fetchRules);
+                      if (f) handleImport(f, "/api/products/pricing/import", fetchRules);
                       e.target.value = "";
                     }}
                   />
@@ -815,16 +1076,30 @@ export default function PricingPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Info bar */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: "0.85rem" }}>
+                <span style={{ color: "var(--text-muted)" }}>
+                  Showing <strong style={{ color: "var(--text)" }}>{rulesData.length}</strong> of <strong style={{ color: "var(--text)" }}>{rulesTotal.toLocaleString()}</strong> rules
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "var(--text-muted)" }}>Rows:</span>
+                  <select value={rulesPageSize} onChange={(e) => setRulesPageSize(Number(e.target.value))}
+                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-2)", fontSize: "0.85rem", background: "var(--surface)" }}>
+                    {PAGE_SIZE_OPTIONS.map((n) => (<option key={n} value={n}>{n}</option>))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             {/* Rules table */}
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {rulesLoading ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   Loading rules...
                 </div>
               ) : rulesData.length === 0 ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   No pricing rules found. Import a COL sheet to get started.
                 </div>
               ) : (
@@ -832,12 +1107,12 @@ export default function PricingPage() {
                   <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
                     <thead>
                       <tr>
+                        <th style={{ width: 150 }}>Variation SKU</th>
+                        <th style={{ minWidth: 140 }}>Description</th>
                         <th style={{ width: 60 }}>Brand</th>
-                        <th style={{ width: 110 }}>Collection Key</th>
-                        <th style={{ width: 120 }}>Parents SKU</th>
-                        <th style={{ minWidth: 140 }}>Product Name</th>
+                        <th style={{ width: 110 }}>Group</th>
                         <th style={{ width: 100 }}>Category</th>
-                        <th style={{ width: 100 }}>Sub-Cat</th>
+                        <th style={{ width: 100 }}>Sub-Category</th>
                         <th style={{ width: 100 }}>Collection</th>
                         <th style={{ width: 75, textAlign: "right" }}>%RSP</th>
                         <th style={{ width: 75, textAlign: "right" }}>%A</th>
@@ -848,48 +1123,43 @@ export default function PricingPage() {
                     </thead>
                     <tbody>
                       {rulesData.map((rule, i) => (
-                        <tr key={rule.id ?? i}>
+                        <tr key={rule.id ?? i} data-row-idx={i}>
+                          <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.84rem", fontWeight: 600 }}>
+                            <a href={`/products/${encodeURIComponent((rule as any).variation_sku || rule.parents_sku || "")}`} style={{ color: "var(--app-accent)", textDecoration: "none" }}>
+                              {(rule as any).variation_sku || rule.parents_sku || "–"}
+                            </a>
+                          </td>
+                          <td>
+                            <EditableCell value={rule.product_name} format="text" onSave={(v) => saveRuleCell(rule, "product_name", v)} />
+                          </td>
                           <td>
                             <span className="badge badge-brand">{rule.brand}</span>
                           </td>
-                          <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem" }}>
+                          <td style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
                             {rule.collection_key ?? "–"}
                           </td>
-                          <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--muted)" }}>
-                            {rule.parents_sku ?? "–"}
+                          <td>
+                            <EditableCell value={rule.category} format="text" onSave={(v) => saveRuleCell(rule, "category", v)} />
                           </td>
-                          <td style={{ fontSize: "0.85rem" }}>{rule.product_name ?? "–"}</td>
-                          <td style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{rule.category ?? "–"}</td>
-                          <td style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{rule.sub_category ?? "–"}</td>
-                          <td style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{rule.collection ?? "–"}</td>
-                          <td style={{ textAlign: "right" }}>
-                            <EditableCell
-                              value={rule.pct_rsp}
-                              format="percent"
-                              onSave={(v) => saveRuleCell(rule, "pct_rsp", v)}
-                            />
+                          <td>
+                            <EditableCell value={rule.sub_category} format="text" onSave={(v) => saveRuleCell(rule, "sub_category", v)} />
                           </td>
-                          <td style={{ textAlign: "right" }}>
-                            <EditableCell
-                              value={rule.pct_campaign_a}
-                              format="percent"
-                              onSave={(v) => saveRuleCell(rule, "pct_campaign_a", v)}
-                            />
+                          <td>
+                            <EditableCell value={rule.collection} format="text" onSave={(v) => saveRuleCell(rule, "collection", v)} />
                           </td>
-                          <td style={{ textAlign: "right" }}>
-                            <EditableCell
-                              value={rule.pct_mega}
-                              format="percent"
-                              onSave={(v) => saveRuleCell(rule, "pct_mega", v)}
-                            />
-                          </td>
-                          <td style={{ textAlign: "right" }}>
-                            <EditableCell
-                              value={rule.pct_flash_sale}
-                              format="percent"
-                              onSave={(v) => saveRuleCell(rule, "pct_flash_sale", v)}
-                            />
-                          </td>
+                          {(["pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"] as const).map((col) => (
+                            <td key={col} style={{
+                              textAlign: "right", position: "relative",
+                              background: rulesIsHighlighted(i, col) ? "rgba(30,64,175,0.10)" : undefined,
+                            }} className="drag-fill-cell">
+                              <EditableCell
+                                value={(rule as any)[col]}
+                                format="percent"
+                                onSave={(v) => saveRuleCell(rule, col, v)}
+                              />
+                              <DragHandle onMouseDown={() => rulesStartDrag(i, col, (rule as any)[col])} />
+                            </td>
+                          ))}
                           <td
                             style={{
                               textAlign: "right",
@@ -897,12 +1167,22 @@ export default function PricingPage() {
                               fontWeight: 600,
                             }}
                           >
-                            {fmtPct(rule.pct_est_margin)}
+                            {rule.pct_est_margin != null ? `${(rule.pct_est_margin * 100).toFixed(1)}%` : "–"}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {rulesTotal > rulesPageSize && (
+                <div className="pager" style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+                  <button className="ghost" disabled={rulesPage <= 1} onClick={() => setRulesPage((p) => Math.max(1, p - 1))} style={{ padding: "6px 14px", fontSize: "0.85rem" }}>Prev</button>
+                  <span className="pager-info">Page {rulesPage} of {Math.max(1, Math.ceil(rulesTotal / rulesPageSize))}</span>
+                  <button className="ghost" disabled={rulesPage >= Math.ceil(rulesTotal / rulesPageSize)} onClick={() => setRulesPage((p) => p + 1)} style={{ padding: "6px 14px", fontSize: "0.85rem" }}>Next</button>
+                  <span style={{ color: "var(--text-muted)", fontSize: "0.82rem", marginLeft: "auto" }}>{rulesTotal.toLocaleString()} total rules</span>
                 </div>
               )}
             </div>
@@ -940,7 +1220,7 @@ export default function PricingPage() {
                     style={{
                       fontSize: "0.72rem",
                       fontWeight: 700,
-                      color: "var(--muted)",
+                      color: "var(--text-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
                       marginBottom: 6,
@@ -960,7 +1240,7 @@ export default function PricingPage() {
                   >
                     {(mappingStats[p] ?? 0).toLocaleString("th-TH")}
                   </div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 2 }}>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>
                     listed
                   </div>
                 </div>
@@ -1014,7 +1294,7 @@ export default function PricingPage() {
                     style={{ display: "none" }}
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) handleImport(f, "/api/products/pricing/mapping/import", fetchMapping);
+                      if (f) handleImport(f, "/api/products/pricing/import", fetchMapping);
                       e.target.value = "";
                     }}
                   />
@@ -1025,11 +1305,11 @@ export default function PricingPage() {
             {/* Mapping table */}
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {mappingLoading ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   Loading mappings...
                 </div>
               ) : mappingData.length === 0 ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   No platform mappings found. Import a SKU sheet to get started.
                 </div>
               ) : (
@@ -1090,13 +1370,13 @@ export default function PricingPage() {
                                 {m.platform}
                               </span>
                             </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--muted)" }}>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
                               {m.platform_sku ?? "–"}
                             </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--muted)" }}>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
                               {m.platform_product_id ?? "–"}
                             </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--muted)" }}>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
                               {m.platform_option_id ?? "–"}
                             </td>
                             <td>

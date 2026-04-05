@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS core.pricing_rules (
   pct_est_margin numeric,
   updated_by text,
   updated_at timestamptz DEFAULT now(),
-  UNIQUE(brand, COALESCE(parents_sku, ''))
+  UNIQUE(brand, parents_sku)
 );
 
 -- SKU-level pricing (replaces computed columns in master sheets)

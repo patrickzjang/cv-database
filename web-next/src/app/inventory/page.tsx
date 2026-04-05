@@ -505,13 +505,13 @@ export default function InventoryPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                  <td colSpan={11} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
                     Loading inventory...
                   </td>
                 </tr>
               ) : sortedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                  <td colSpan={11} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
                     No inventory items found
                   </td>
                 </tr>
@@ -558,7 +558,7 @@ export default function InventoryPage() {
                             {dl}d
                           </span>
                         ) : (
-                          <span style={{ color: "var(--muted)" }}>{"\u2014"}</span>
+                          <span style={{ color: "var(--text-muted)" }}>{"\u2014"}</span>
                         )}
                       </td>
                       <td style={{ textAlign: "center" }}>
@@ -665,14 +665,14 @@ export default function InventoryPage() {
                 </span>
               )}
             </h3>
-            <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: "0.85rem" }}>
+            <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: "0.85rem" }}>
               Items at or below minimum stock level
             </p>
           </div>
           <span
             style={{
               fontSize: "1.2rem",
-              color: "var(--muted)",
+              color: "var(--text-muted)",
               transform: reorderOpen ? "rotate(180deg)" : "rotate(0deg)",
               transition: "transform 0.2s",
             }}
@@ -684,7 +684,7 @@ export default function InventoryPage() {
         {reorderOpen && (
           <div style={{ marginTop: 14 }}>
             {reorderItems.length === 0 ? (
-              <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: 0 }}>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", margin: 0 }}>
                 No items currently need reordering.
               </p>
             ) : (
@@ -759,7 +759,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -782,7 +782,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -808,7 +808,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -834,7 +834,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -890,7 +890,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -913,7 +913,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -949,7 +949,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,
@@ -972,7 +972,7 @@ export default function InventoryPage() {
                     display: "block",
                     fontSize: "0.72rem",
                     fontWeight: 700,
-                    color: "var(--muted)",
+                    color: "var(--text-muted)",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
                     marginBottom: 5,

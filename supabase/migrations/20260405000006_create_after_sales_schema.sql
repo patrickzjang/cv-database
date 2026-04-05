@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS jst_raw.after_sale_orders_raw (
 -- Customer-initiated return requests (before pushing to JST)
 CREATE TABLE IF NOT EXISTS core.return_requests (
   id bigserial PRIMARY KEY,
-  tracking_code text UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(6), 'hex'),
+  tracking_code text UNIQUE NOT NULL DEFAULT substr(md5(random()::text || clock_timestamp()::text), 1, 12),
   platform_order_id text NOT NULL,
   customer_name text,
   customer_phone text,

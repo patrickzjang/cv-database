@@ -85,7 +85,7 @@ function LineChart({ data }: { data: TrendRow[] }) {
 
   if (!data.length) {
     return (
-      <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
+      <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
         No data
       </div>
     );
@@ -217,7 +217,7 @@ function MultiSelectFilter({
 
   return (
     <div>
-      <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{title}</div>
       <div ref={ref} style={{ position: "relative", minWidth: 160 }}>
         <button
           className="ghost"
@@ -241,7 +241,7 @@ function MultiSelectFilter({
               style={{ width: "100%", textAlign: "left", marginBottom: 4,
                 background: allSelected ? "#1e2f66" : "transparent",
                 borderColor: allSelected ? "#2c3f7a" : "transparent",
-                color: allSelected ? "#fff" : "var(--muted)" }}
+                color: allSelected ? "#fff" : "var(--text-muted)" }}
               onClick={() => { onChange([]); setOpen(false); }}
             >
               {allLabel}
@@ -367,22 +367,6 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* ── Topbar ── */}
-      <div className="topbar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div className="brand">
-            <img src="/fav-logo-2026.png" alt="logo" className="logo" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-            <div>
-              <div className="brand-title">Order Dashboard</div>
-              <div className="brand-sub">JST Sales Overview</div>
-            </div>
-          </div>
-          <button className="ghost" onClick={() => router.push("/")} style={{ fontSize: "0.9rem" }}>
-            ← Back to Products
-          </button>
-        </div>
-      </div>
-
       <div className="page">
         {/* ── Filters ── */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -390,7 +374,7 @@ export default function DashboardPage() {
 
             {/* Date range buttons */}
             <div>
-              <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>TIME RANGE</div>
+              <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>TIME RANGE</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {DATE_RANGES.map(({ key, label }) => (
                   <button key={key}
@@ -407,13 +391,13 @@ export default function DashboardPage() {
             {dateRange === "custom" && (
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>FROM</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 4 }}>FROM</div>
                   <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
                     style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #33406b",
                       background: "#0d1730", color: "var(--text)", fontSize: "0.9rem" }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>TO</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 4 }}>TO</div>
                   <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
                     style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #33406b",
                       background: "#0d1730", color: "var(--text)", fontSize: "0.9rem" }} />
@@ -456,7 +440,7 @@ export default function DashboardPage() {
 
         {/* ── Loading skeleton ── */}
         {loading && (
-          <div style={{ color: "var(--muted)", textAlign: "center", padding: "60px 0" }}>
+          <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "60px 0" }}>
             <div style={{ fontSize: "1.4rem", marginBottom: 8 }}>⟳</div>
             Loading dashboard…
           </div>
@@ -474,7 +458,7 @@ export default function DashboardPage() {
               ].map(({ label, value, icon, color, tooltip }) => (
                 <div key={label} className="card" style={{ padding: "20px 22px" }} title={tooltip}>
                   <div style={{ fontSize: "1.5rem", marginBottom: 6 }}>{icon}</div>
-                  <div style={{ color: "var(--muted)", fontSize: "0.8rem", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem", fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
                   </div>
                   <div style={{ fontSize: "1.6rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>
@@ -492,7 +476,7 @@ export default function DashboardPage() {
                 { label: "Avg Order Value", value: `฿${fmt(summary?.avg_order_value)}`, color: "#9db0d0" },
               ].map(({ label, value, color }) => (
                 <div key={label} className="card" style={{ padding: "14px 18px" }}>
-                  <div style={{ color: "var(--muted)", fontSize: "0.75rem", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.78rem", fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
                   </div>
                   <div style={{ fontSize: "1.2rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>
@@ -515,7 +499,7 @@ export default function DashboardPage() {
               <div className="card">
                 <div style={{ fontWeight: 700, marginBottom: 14, fontSize: "1rem" }}>Order Status</div>
                 {data.statusBreakdown.length === 0 ? (
-                  <div style={{ color: "var(--muted)" }}>No data</div>
+                  <div style={{ color: "var(--text-muted)" }}>No data</div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
                     {data.statusBreakdown.map((row) => {
@@ -525,9 +509,9 @@ export default function DashboardPage() {
                         <div key={row.status}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: "0.88rem" }}>
                             <span style={{ color: col, fontWeight: 600 }}>{statusLabel(row.status)}</span>
-                            <span style={{ color: "var(--muted)" }}>{fmtInt(row.cnt)}</span>
+                            <span style={{ color: "var(--text-muted)" }}>{fmtInt(row.cnt)}</span>
                           </div>
-                          <div style={{ height: 6, borderRadius: 999, background: "#0d1730" }}>
+                          <div style={{ height: 6, borderRadius: 999, background: "var(--surface-2)" }}>
                             <div style={{ height: "100%", borderRadius: 999, width: `${pct}%`, background: col, transition: "width 0.4s ease" }} />
                           </div>
                         </div>
@@ -589,7 +573,7 @@ export default function DashboardPage() {
             <div className="card">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ fontWeight: 700, fontSize: "1rem" }}>
-                  Top Selling Products <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: "0.85rem" }}>by VARIATION_SKU</span>
+                  Top Selling Products <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: "0.85rem" }}>by VARIATION_SKU</span>
                 </div>
                 <input
                   type="text"
@@ -604,7 +588,7 @@ export default function DashboardPage() {
                 />
               </div>
               {data.topSkus.length === 0 ? (
-                <div style={{ color: "var(--muted)" }}>No data</div>
+                <div style={{ color: "var(--text-muted)" }}>No data</div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
@@ -626,20 +610,20 @@ export default function DashboardPage() {
                     </thead>
                     <tbody>
                       {filteredSkus.length === 0 ? (
-                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No matching SKUs</td></tr>
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: 20 }}>No matching SKUs</td></tr>
                       ) : (
                         filteredSkus.map((row, i) => {
                           const maxQty = Math.max(...filteredSkus.map((r) => r.total_qty), 1);
                           const pct = Math.round((row.total_qty / maxQty) * 100);
                           return (
                             <tr key={row.variation_sku}>
-                              <td style={{ color: "var(--muted)", textAlign: "center" }}>{i + 1}</td>
+                              <td style={{ color: "var(--text-muted)", textAlign: "center" }}>{i + 1}</td>
                               <td>
                                 <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--accent-2)" }}>
                                   {row.variation_sku}
                                 </span>
                               </td>
-                              <td style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{row.sku_name ?? "–"}</td>
+                              <td style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>{row.sku_name ?? "–"}</td>
                               <td style={{ textAlign: "right", fontWeight: 700 }}>{fmtInt(row.total_qty)}</td>
                               <td style={{ textAlign: "right" }}>{fmt(row.total_revenue)}</td>
                               <td>
@@ -665,7 +649,7 @@ export default function DashboardPage() {
 
         {/* Empty state (first load, not loading) */}
         {!loading && !data && !error && (
-          <div style={{ textAlign: "center", padding: "80px 0", color: "var(--muted)" }}>
+          <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-muted)" }}>
             <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>📊</div>
             <div style={{ fontSize: "1.1rem" }}>Loading dashboard…</div>
           </div>

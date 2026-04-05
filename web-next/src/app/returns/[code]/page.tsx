@@ -102,7 +102,7 @@ export default function ReturnTrackingPage() {
   if (loading) {
     return (
       <div style={{ maxWidth: 640, margin: "48px auto", padding: "0 20px", textAlign: "center" }}>
-        <div style={{ color: "var(--muted)", padding: "60px 0" }}>Loading...</div>
+        <div style={{ color: "var(--text-muted)", padding: "60px 0" }}>Loading...</div>
       </div>
     );
   }
@@ -113,7 +113,7 @@ export default function ReturnTrackingPage() {
         <div className="card" style={{ textAlign: "center", padding: "40px 28px" }}>
           <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>&#9888;</div>
           <h2 style={{ color: "var(--error)", marginBottom: 8, fontSize: "1.2rem" }}>Request Not Found</h2>
-          <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginBottom: 20 }}>{error}</p>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 20 }}>{error}</p>
           <Link href="/returns" style={{ color: "var(--cyan)", fontWeight: 600, textDecoration: "none" }}>
             &larr; Back to Returns
           </Link>
@@ -141,7 +141,7 @@ export default function ReturnTrackingPage() {
     <div style={{ maxWidth: 640, margin: "32px auto", padding: "0 20px 40px" }}>
       {/* Back link */}
       <Link href="/returns" style={{
-        color: "var(--muted)", textDecoration: "none", fontSize: "0.88rem",
+        color: "var(--text-muted)", textDecoration: "none", fontSize: "0.88rem",
         fontWeight: 600, display: "inline-block", marginBottom: 20,
       }}>
         &larr; Back to Returns
@@ -149,7 +149,7 @@ export default function ReturnTrackingPage() {
 
       {/* Tracking Code Header */}
       <div className="card" style={{ textAlign: "center", padding: "28px 24px", marginBottom: 16 }}>
-        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
           Tracking Code
         </div>
         <div style={{ fontSize: "1.8rem", fontWeight: 700, letterSpacing: "0.04em", color: "var(--cyan)", marginBottom: 14 }}>
@@ -168,7 +168,7 @@ export default function ReturnTrackingPage() {
       {/* Status Timeline */}
       {!isRejected && !isCancelled && (
         <div className="card" style={{ padding: "24px", marginBottom: 16 }}>
-          <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 18 }}>
+          <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 18 }}>
             Progress
           </div>
           <div style={{ position: "relative" }}>
@@ -198,7 +198,7 @@ export default function ReturnTrackingPage() {
                     border: `2px solid ${color}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: "0.72rem", fontWeight: 700,
-                    color: isDone ? "#fff" : "var(--muted)",
+                    color: isDone ? "#fff" : "var(--text-muted)",
                     boxShadow: isCurrent ? `0 0 0 4px ${color}33` : "none",
                     zIndex: 1,
                   }}>
@@ -209,12 +209,12 @@ export default function ReturnTrackingPage() {
                   <div style={{ paddingTop: 4 }}>
                     <div style={{
                       fontWeight: 600, fontSize: "0.92rem", textTransform: "capitalize",
-                      color: isDone ? "var(--text)" : "var(--muted)",
+                      color: isDone ? "var(--text)" : "var(--text-muted)",
                     }}>
                       {step}
                     </div>
                     {entry && (
-                      <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 2 }}>
+                      <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>
                         {fmtDateTime(entry.changed_at)}
                       </div>
                     )}
@@ -236,7 +236,7 @@ export default function ReturnTrackingPage() {
           <div style={{ fontWeight: 700, color: statusColor, marginBottom: 4, textTransform: "capitalize" }}>
             {data.status}
           </div>
-          <div style={{ color: "var(--muted)", fontSize: "0.88rem" }}>
+          <div style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
             This return request has been {data.status}. Please contact support if you have questions.
           </div>
         </div>
@@ -244,11 +244,11 @@ export default function ReturnTrackingPage() {
 
       {/* Items */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
+        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
           Items Being Returned
         </div>
         {(data.items ?? []).length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: "0.9rem" }}>No items</div>
+          <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No items</div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {data.items.map((item, i) => (
@@ -259,7 +259,7 @@ export default function ReturnTrackingPage() {
               }}>
                 <div>
                   <div style={{ fontWeight: 600, fontFamily: "monospace", fontSize: "0.9rem" }}>{item.sku}</div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 2 }}>{item.reason}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>{item.reason}</div>
                 </div>
                 <div style={{
                   background: "var(--surface)", borderRadius: 8, padding: "4px 12px",
@@ -274,7 +274,7 @@ export default function ReturnTrackingPage() {
       </div>
 
       {/* Created date */}
-      <div style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.85rem" }}>
+      <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
         Submitted on {fmtDate(data.created_at)}
       </div>
     </div>

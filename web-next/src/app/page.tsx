@@ -695,25 +695,8 @@ export default function Home() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="brand">
-          <img src="/assets/new-logo-2026.png" alt="Cloud Vision" className="logo" />
-          <div className="brand-text">
-            <div className="brand-title">Cloud Vision Product Management</div>
-            <div className="brand-sub">Product images & master data</div>
-          </div>
-        </div>
-      </header>
-
       <main className="page">
         <section className="panel">
-          <div className="auth-row">
-            <button className="ghost" onClick={() => router.push("/dashboard")} style={{ marginRight: "auto" }}>
-              📊 Order Dashboard
-            </button>
-            <button className="ghost" onClick={logout}>Logout</button>
-          </div>
-
           <div className="brand-tabs">
             {BRAND_LIST.map((b) => (
               <button

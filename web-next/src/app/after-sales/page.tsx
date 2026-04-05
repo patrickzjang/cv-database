@@ -158,26 +158,26 @@ function DetailModal({
         <div className="modal-body" style={{ maxHeight: "none" }}>
           {/* Order Info */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
               Order Information
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 20px" }}>
-              <div><span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Order ID:</span> <strong>{request.platform_order_id}</strong></div>
-              <div><span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Customer:</span> <strong>{request.customer_name}</strong></div>
-              <div><span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Phone:</span> {request.phone || "–"}</div>
-              <div><span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Email:</span> {request.email || "–"}</div>
-              <div><span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Type:</span> {request.after_sale_type}</div>
-              <div><span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Brand:</span> {request.brand}</div>
+              <div><span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Order ID:</span> <strong>{request.platform_order_id}</strong></div>
+              <div><span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Customer:</span> <strong>{request.customer_name}</strong></div>
+              <div><span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Phone:</span> {request.phone || "–"}</div>
+              <div><span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Email:</span> {request.email || "–"}</div>
+              <div><span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Type:</span> {request.after_sale_type}</div>
+              <div><span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Brand:</span> {request.brand}</div>
             </div>
           </div>
 
           {/* Items */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
               Items
             </div>
             {(request.items ?? []).length === 0 ? (
-              <div style={{ color: "var(--muted)", fontSize: "0.9rem" }}>No items</div>
+              <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No items</div>
             ) : (
               <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
                 <thead>
@@ -203,7 +203,7 @@ function DetailModal({
           {/* Photo Evidence */}
           {(request.photo_urls ?? []).length > 0 && (
             <div className="card" style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
                 Photo Evidence
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -221,7 +221,7 @@ function DetailModal({
 
           {/* Status Timeline */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>
               Status Timeline
             </div>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 0, overflowX: "auto", paddingBottom: 8 }}>
@@ -240,7 +240,7 @@ function DetailModal({
                         background: isCompleted ? color : "var(--surface-2)",
                         border: `2px solid ${color}`,
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: "0.7rem", color: isCompleted ? "#fff" : "var(--muted)",
+                        fontSize: "0.7rem", color: isCompleted ? "#fff" : "var(--text-muted)",
                         fontWeight: 700, flexShrink: 0,
                         boxShadow: isCurrent ? `0 0 0 4px ${color}33` : "none",
                       }}>
@@ -249,12 +249,12 @@ function DetailModal({
                       <div style={{
                         marginTop: 6, fontSize: "0.75rem", fontWeight: 600,
                         textTransform: "capitalize", textAlign: "center",
-                        color: isCompleted ? "var(--text)" : "var(--muted)",
+                        color: isCompleted ? "var(--text)" : "var(--text-muted)",
                       }}>
                         {step}
                       </div>
                       {entry && (
-                        <div style={{ marginTop: 2, fontSize: "0.68rem", color: "var(--muted)", textAlign: "center" }}>
+                        <div style={{ marginTop: 2, fontSize: "0.68rem", color: "var(--text-muted)", textAlign: "center" }}>
                           {fmtDateTime(entry.changed_at)}
                         </div>
                       )}
@@ -273,7 +273,7 @@ function DetailModal({
 
           {/* Actions */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
               Actions & Notes
             </div>
             <textarea
@@ -370,19 +370,19 @@ function CreateModal({
         <div className="modal-body" style={{ maxHeight: "none" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Warehouse ID</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Warehouse ID</label>
               <input value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} placeholder="e.g. WH001" style={{ width: "100%" }} />
             </div>
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Shop ID</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Shop ID</label>
               <input value={shopId} onChange={(e) => setShopId(e.target.value)} placeholder="e.g. SHOP01" style={{ width: "100%" }} />
             </div>
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Platform Order ID</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Platform Order ID</label>
               <input value={orderId} onChange={(e) => setOrderId(e.target.value)} placeholder="Order ID" style={{ width: "100%" }} />
             </div>
             <div>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Type</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Type</label>
               <select value={saleType} onChange={(e) => setSaleType(e.target.value)} style={{ width: "100%" }}>
                 {AFTER_SALE_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -394,7 +394,7 @@ function CreateModal({
           {/* Items */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Items</label>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)" }}>Items</label>
               <button className="ghost" onClick={addItem} style={{ padding: "4px 12px", fontSize: "0.82rem" }}>+ Add Item</button>
             </div>
             {items.map((item, i) => (
@@ -411,7 +411,7 @@ function CreateModal({
 
           {/* Remark */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>Remark</label>
+            <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Remark</label>
             <textarea value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Additional notes..." rows={3} style={{ width: "100%", resize: "vertical" }} />
           </div>
 
@@ -542,7 +542,7 @@ export default function AfterSalesPage() {
         {summaryCards.map(({ label, value, color, icon }) => (
           <div key={label} className="card" style={{ padding: "18px 20px" }}>
             <div style={{ fontSize: "1.3rem", marginBottom: 4 }}>{icon}</div>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
               {label}
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>
@@ -556,7 +556,7 @@ export default function AfterSalesPage() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Status</div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Status</div>
             <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ minWidth: 140 }}>
               {ALL_STATUSES.map((s) => (
                 <option key={s} value={s}>{s === "all" ? "All Statuses" : s.charAt(0).toUpperCase() + s.slice(1)}</option>
@@ -564,15 +564,15 @@ export default function AfterSalesPage() {
             </select>
           </div>
           <div>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>From</div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>From</div>
             <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
           </div>
           <div>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>To</div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>To</div>
             <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Search</div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Search</div>
             <input
               type="text"
               placeholder="Order ID or customer name..."
@@ -596,7 +596,7 @@ export default function AfterSalesPage() {
 
       {/* Loading */}
       {loading && (
-        <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>
+        <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)" }}>
           Loading requests...
         </div>
       )}
@@ -621,7 +621,7 @@ export default function AfterSalesPage() {
               <tbody>
                 {requests.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>
+                    <td colSpan={8} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
                       No after-sale requests found
                     </td>
                   </tr>
@@ -634,7 +634,7 @@ export default function AfterSalesPage() {
                       <td>{req.brand}</td>
                       <td style={{ fontSize: "0.85rem" }}>{req.after_sale_type}</td>
                       <td><StatusBadge status={req.status} /></td>
-                      <td style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{fmtDate(req.created_at)}</td>
+                      <td style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{fmtDate(req.created_at)}</td>
                       <td>
                         <button className="ghost" style={{ padding: "4px 10px", fontSize: "0.8rem" }}
                           onClick={(e) => { e.stopPropagation(); setSelectedRequest(req); }}>
@@ -658,7 +658,7 @@ export default function AfterSalesPage() {
                 style={{ padding: "6px 14px", fontSize: "0.85rem" }}>
                 Previous
               </button>
-              <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}>
+              <span style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
                 Page {page} of {totalPages}
               </span>
               <button className="ghost" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
