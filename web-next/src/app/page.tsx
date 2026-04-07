@@ -23,20 +23,6 @@ type ImageRef = { name: string; url: string; key?: string };
 
 type Row = Record<string, any>;
 const HIDDEN_SEARCH_COLUMNS = new Set(["MONTH", "GROUP", "ITEM_SKU"]);
-type MasterUploadResult = {
-  file: string;
-  brand?: string;
-  status: "imported" | "skipped" | "error";
-  total?: number;
-  inserted?: number;
-  updated?: number;
-  unchanged?: number;
-  reason?: string;
-  error?: string;
-  archive_bucket?: string;
-  archive_path?: string;
-  state_warning?: string;
-};
 
 function getVisibleTableHeaders(row: Row): string[] {
   const headers = Object.keys(row).filter(
@@ -78,18 +64,6 @@ function withCacheBuster(url: string, version: number): string {
   return url.includes("?") ? `${url}&v=${version}` : `${url}?v=${version}`;
 }
 
-async function fetchJsonWithTimeout(url: string, options: RequestInit, timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    const payload = await res.json().catch(() => null);
-    return { res, payload };
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
 export default function Home() {
   const router = useRouter();
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -112,14 +86,8 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
-  const [masterFiles, setMasterFiles] = useState<File[]>([]);
-  const [masterStatus, setMasterStatus] = useState("Waiting for master file upload.");
+  const [masterStatus, setMasterStatus] = useState("");
   const [masterUploading, setMasterUploading] = useState(false);
-  const [masterProgressOpen, setMasterProgressOpen] = useState(false);
-  const [masterProgressPercent, setMasterProgressPercent] = useState(0);
-  const [masterProgressLabel, setMasterProgressLabel] = useState("");
-  const [masterSummaryOpen, setMasterSummaryOpen] = useState(false);
-  const [masterResults, setMasterResults] = useState<MasterUploadResult[]>([]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 600px)");
@@ -232,87 +200,6 @@ export default function Home() {
       }
     }
     setStatus("Done.");
-  };
-
-  const uploadMasterFiles = async () => {
-    if (masterFiles.length === 0 || masterUploading) return;
-    setMasterUploading(true);
-    setMasterProgressOpen(true);
-    setMasterProgressPercent(0);
-    setMasterProgressLabel("Preparing upload...");
-    setMasterStatus("Uploading master files...");
-    const results: MasterUploadResult[] = [];
-
-    for (let idx = 0; idx < masterFiles.length; idx += 1) {
-      const file = masterFiles[idx];
-      const totalFiles = masterFiles.length;
-      const basePercent = (idx / totalFiles) * 100;
-      const endPercent = ((idx + 1) / totalFiles) * 100;
-      let visualPercent = basePercent;
-      const capPercent = Math.max(basePercent, endPercent - 1);
-      setMasterProgressLabel(`Processing ${idx + 1}/${totalFiles}: ${file.name}`);
-      setMasterStatus(`Processing ${idx + 1}/${totalFiles}: ${file.name}`);
-      setMasterProgressPercent(Math.round(basePercent));
-      const ticker = window.setInterval(() => {
-        const remaining = capPercent - visualPercent;
-        const step = remaining > 20 ? 2 : remaining > 8 ? 1.1 : 0.4;
-        visualPercent = Math.min(capPercent, visualPercent + step);
-        setMasterProgressPercent(Math.round(visualPercent));
-      }, 220);
-
-      try {
-        const form = new FormData();
-        form.append("file", file);
-        const { res, payload } = await fetchJsonWithTimeout(
-          "/api/master-upload",
-          { method: "POST", body: form },
-          240000
-        );
-        if (res.status === 401) {
-          setIsAuthenticated(false);
-          router.replace("/login");
-          results.push({ file: file.name, status: "error", error: "Please login first" });
-          setMasterProgressPercent(Math.round(endPercent));
-          break;
-        }
-        if (!res.ok) {
-          results.push({ file: file.name, status: "error", error: payload?.error || res.statusText });
-          setMasterProgressPercent(Math.round(endPercent));
-          continue;
-        }
-        results.push({
-          file: file.name,
-          brand: payload?.brand,
-          status: payload?.status || "imported",
-          total: payload?.total,
-          inserted: payload?.inserted,
-          updated: payload?.updated,
-          unchanged: payload?.unchanged,
-          reason: payload?.reason,
-          archive_bucket: payload?.archive_bucket,
-          archive_path: payload?.archive_path,
-          state_warning: payload?.state_warning,
-        });
-        setMasterProgressPercent(Math.round(endPercent));
-      } catch (err: any) {
-        const message = err?.name === "AbortError"
-          ? "Request timed out after 4 minutes. Please check summary and refresh."
-          : err?.message || "Unexpected error";
-        results.push({ file: file.name, status: "error", error: message });
-        setMasterProgressPercent(Math.round(endPercent));
-      } finally {
-        window.clearInterval(ticker);
-      }
-    }
-
-    setMasterProgressPercent(100);
-    setMasterProgressLabel("Finalizing...");
-    setMasterResults(results);
-    setMasterSummaryOpen(true);
-    setTimeout(() => setMasterProgressOpen(false), 220);
-    const okCount = results.filter((r) => r.status !== "error").length;
-    setMasterStatus(`Finished: ${okCount}/${results.length} file(s) processed.`);
-    setMasterUploading(false);
   };
 
   // Load images in one batch request after search
@@ -964,51 +851,6 @@ export default function Home() {
         </div>
       )}
 
-      {masterSummaryOpen && (
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="masterSummaryTitle">
-          <div className="modal-backdrop" onClick={() => setMasterSummaryOpen(false)}></div>
-          <div className="modal-content">
-            <div className="modal-header">
-              <div id="masterSummaryTitle" className="modal-title">Master Upload Summary</div>
-              <button className="ghost" onClick={() => setMasterSummaryOpen(false)}>Close</button>
-            </div>
-            <div className="modal-body">
-              <ul className="file-list">
-                {masterResults.map((r, i) => (
-                  <li key={`${r.file}-${i}`} className={`file-item ${r.status === "error" ? "error" : r.status === "imported" ? "ok" : ""}`}>
-                    <div className="name">{r.file}</div>
-                    <div className="status">
-                      {r.status === "imported" && `Imported (${r.brand || "-"}): total=${r.total || 0}, inserted=${r.inserted || 0}, updated=${r.updated || 0}, unchanged=${r.unchanged || 0}`}
-                      {r.status === "skipped" && `Skipped: ${r.reason || "Not newer version"}`}
-                      {r.status === "error" && `Error: ${r.error || "Unknown error"}`}
-                      {r.status !== "error" && r.archive_bucket && r.archive_path && ` | Archived: ${r.archive_bucket}/${r.archive_path}`}
-                      {r.status !== "error" && r.state_warning && ` | Warning: ${r.state_warning}`}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {masterProgressOpen && (
-        <div className="modal modal-center" role="dialog" aria-modal="true" aria-labelledby="masterProgressTitle">
-          <div className="modal-backdrop"></div>
-          <div className="modal-content progress-modal">
-            <div className="modal-header">
-              <div id="masterProgressTitle" className="modal-title">Uploading Master Data</div>
-            </div>
-            <div className="modal-body">
-              <div className="progress-label">{masterProgressLabel}</div>
-              <div className="progress-track" aria-hidden="true">
-                <div className="progress-fill" style={{ width: `${masterProgressPercent}%` }}></div>
-              </div>
-              <div className="progress-percent">{masterProgressPercent}%</div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

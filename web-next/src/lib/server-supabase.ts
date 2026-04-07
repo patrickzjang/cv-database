@@ -1,4 +1,4 @@
-import { BRAND_VIEWS, BRAND_VARIATION_VIEWS, VARIATION_COLUMN } from "@/lib/config";
+import { BRAND_VIEWS, BRAND_VARIATION_VIEWS } from "@/lib/config";
 
 export type Brand = keyof typeof BRAND_VIEWS;
 
@@ -87,40 +87,3 @@ export async function supabaseRestGet(
   return { data, count: countMode === "none" ? 0 : parseCount(res.headers.get("content-range")) };
 }
 
-export async function callUpdateProductImages(params: {
-  variationSku: string;
-  bucket: string;
-  path: string;
-  brand: string;
-}) {
-  const fnRes = await fetch(`${SUPABASE_URL}/functions/v1/update_product_images`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      variation_sku: params.variationSku,
-      paths: [params.path],
-      bucket: params.bucket,
-      brand: params.brand,
-    }),
-  });
-
-  if (!fnRes.ok) {
-    const body = await fnRes.text().catch(() => "");
-    throw new Error(body || "Edge Function returned a non-2xx status code");
-  }
-}
-
-export function sortMasterRows(rows: Record<string, unknown>[]) {
-  return rows.sort((a, b) => {
-    const av = String(a[VARIATION_COLUMN] ?? "");
-    const bv = String(b[VARIATION_COLUMN] ?? "");
-    if (av !== bv) return av < bv ? -1 : 1;
-    const ai = String(a.ITEM_SKU ?? "");
-    const bi = String(b.ITEM_SKU ?? "");
-    return ai < bi ? -1 : ai > bi ? 1 : 0;
-  });
-}

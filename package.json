@@ -4,15 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "master:update:dry-run": "node scripts/update_master_from_csv.js --dry-run",
-    "master:update:preview": "node scripts/update_master_from_csv.js --preview",
-    "master:update": "node scripts/update_master_from_csv.js",
-    "photo:init": "node scripts/init_photo_archive.js",
-    "photo:ingest": "node scripts/ingest_raw_photos.js",
-    "photo:query": "node scripts/query_raw_by_sku.js",
-    "photo:b2:setup": "bash scripts/setup_b2_rclone.sh",
-    "photo:b2:check": "bash scripts/check_b2_connection.sh"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
