@@ -8,7 +8,6 @@ import * as XLSX from "xlsx";
 
 const GSHEET_ID = "10WIc5xJHaPbZoCTHPY0jAe2BA_2VkvH_jALTgZJ1-54";
 const BRAND_SHEETS = ["DAYBREAK", "PAN", "HEELCARE", "ARENA"] as const;
-const COL_SHEETS = ["DB_COL", "PN_COL", "HC_COL", "AN_COL"] as const;
 
 /**
  * POST /api/master-data/sync-gsheet
@@ -35,10 +34,11 @@ export async function POST(req: NextRequest) {
 
     const stats = { pricing: 0, rules: 0, errors: [] as string[] };
 
-    // 2. Parse brand sheets (col A:J) → sku_pricing
-    // Header row 1: BRAND, GROUP, PARENTS_SKU, ITEM_SKU, DESCRIPTION, UPC, Price Tag, COGs (Ex.Vat), Vat, COGs (Inc.Vat)
-    // Also grab pricing cols (W onwards): RRP, RSP, RSP%, A, %A, Mega, %Mega, FS, %FS, Min Price, Cost, Est. Margin
+    // 2. Parse brand sheets col A:J (product data) + col N:U (platform IDs)
+    // Pricing columns (W:AH) are NOT synced — managed in Pricing Rules UI only
+    // COL sheets are NOT synced — one-time import only
     const pricingRows: Record<string, unknown>[] = [];
+    const platformMappingRows: Record<string, unknown>[] = [];
 
     for (const sheetName of BRAND_SHEETS) {
       const ws = wb.Sheets[sheetName];
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
 
         const variationSku = deriveVariationSku(brand, itemSku, parentsSku);
 
+        // Only sync col A:J (product master data) — prices are managed in the system
         pricingRows.push({
           item_sku: itemSku,
           variation_sku: variationSku,
@@ -67,22 +68,50 @@ export async function POST(req: NextRequest) {
           cogs_ex_vat: Number(r[7]) || null,
           vat: Number(r[8]) || null,
           cogs_inc_vat: Number(r[9]) || null,
-          // Pricing columns (W=22 onwards)
-          rrp: Number(r[22]) || null,
-          rsp: Number(r[23]) || null,
-          price_campaign_a: Number(r[25]) || null,
-          price_mega: Number(r[27]) || null,
-          price_flash_sale: Number(r[29]) || null,
-          min_price: Number(r[31]) || null,
-          est_margin: Number(r[33]) || null,
         });
+
+        // Platform IDs from brand sheet col N-U (13-20)
+        // N=13: Shopee Product ID, O=14: Shopee SKU ID
+        // P=15: Lazada Product ID, Q=16: Lazada SKU ID
+        // R=17: TTS Product ID,    S=18: TTS SKU ID
+        // T=19: Shopify Product ID, U=20: Shopify SKU ID
+        const platformCols: [string, number, number][] = [
+          ["shopee", 13, 14],
+          ["lazada", 15, 16],
+          ["tiktok", 17, 18],
+          ["shopify", 19, 20],
+        ];
+        for (const [platform, pidCol, skuCol] of platformCols) {
+          const rawPid = r[pidCol];
+          const rawSid = r[skuCol];
+          // Convert to string — handle 0 (number) properly
+          const pid = rawPid != null && rawPid !== "" ? String(rawPid) : "";
+          const sid = rawSid != null && rawSid !== "" ? String(rawSid) : "";
+          // Skip only #N/A or truly empty
+          if (pid === "#N/A" || pid === "") continue;
+          platformMappingRows.push({
+            item_sku: itemSku,
+            brand,
+            platform,
+            platform_sku: itemSku,
+            platform_product_id: pid,
+            platform_option_id: sid !== "#N/A" ? sid : "",
+          });
+        }
       }
     }
 
+    // Deduplicate by item_sku (keep last occurrence)
+    const deduped = new Map<string, Record<string, unknown>>();
+    for (const row of pricingRows) {
+      deduped.set(row.item_sku as string, row);
+    }
+    const uniquePricing = [...deduped.values()];
+
     // Upsert sku_pricing in batches
     const batchSize = 500;
-    for (let i = 0; i < pricingRows.length; i += batchSize) {
-      const batch = pricingRows.slice(i, i + batchSize);
+    for (let i = 0; i < uniquePricing.length; i += batchSize) {
+      const batch = uniquePricing.slice(i, i + batchSize);
       const { error } = await sb
         .schema("core")
         .from("sku_pricing")
@@ -91,57 +120,32 @@ export async function POST(req: NextRequest) {
       else stats.pricing += batch.length;
     }
 
-    // 3. Parse COL sheets → pricing_rules
-    const rulesRows: Record<string, unknown>[] = [];
+    // 2b. Upsert platform_sku_mapping (from brand sheets col N-U only — single source of truth)
+    // Deduplicate by (item_sku, platform)
+    const mappingDeduped = new Map<string, Record<string, unknown>>();
+    for (const row of platformMappingRows) {
+      mappingDeduped.set(`${row.item_sku}:${row.platform}`, row);
+    }
+    const uniqueMapping = [...mappingDeduped.values()];
 
-    for (const sheetName of COL_SHEETS) {
-      const ws = wb.Sheets[sheetName];
-      if (!ws) continue;
-      const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-      // Header: BRAND, GROUP, PARENTS_SKU, DESCRIPTION, CATEGORY, SUB-CATEGORY, COLLECTION, %RSP, %A, %Mega, %FS, %Est Margin
-
-      for (let i = 1; i < data.length; i++) {
-        const r = data[i];
-        const parentsSku = String(r[2] || "") || null;
-        if (!parentsSku && !r[4]) continue;
-
-        // Derive variation_sku from first matching sku_pricing
-        const matchingPricing = pricingRows.find(
-          (p) => p.parents_sku === parentsSku && p.brand === String(r[0] || ""),
-        );
-
-        rulesRows.push({
-          brand: String(r[0] || ""),
-          collection_key: String(r[1] || "") || null,
-          parents_sku: parentsSku,
-          variation_sku: (matchingPricing as any)?.variation_sku || null,
-          product_name: String(r[3] || "") || null,
-          category: String(r[4] || "") || null,
-          sub_category: String(r[5] || "") || null,
-          collection: String(r[6] || "") || null,
-          pct_rsp: Number(r[7]) || 1,
-          pct_campaign_a: Number(r[8]) || 1,
-          pct_mega: Number(r[9]) || 1,
-          pct_flash_sale: Number(r[10]) || 1,
-          pct_est_margin: Number(r[11]) || null,
-        });
-      }
+    // Delete old and insert fresh
+    await sb.schema("core").from("platform_sku_mapping").delete().gte("id", 0);
+    let mappingInserted = 0;
+    for (let i = 0; i < uniqueMapping.length; i += batchSize) {
+      const batch = uniqueMapping.slice(i, i + batchSize);
+      const { error } = await sb.schema("core").from("platform_sku_mapping").insert(batch);
+      if (error) stats.errors.push(`platform_mapping batch ${i}: ${error.message}`);
+      else mappingInserted += batch.length;
     }
 
-    // Delete old rules and insert new
-    await sb.schema("core").from("pricing_rules").delete().gte("id", 0);
-    for (let i = 0; i < rulesRows.length; i += batchSize) {
-      const batch = rulesRows.slice(i, i + batchSize);
-      const { error } = await sb.schema("core").from("pricing_rules").insert(batch);
-      if (error) stats.errors.push(`pricing_rules batch ${i}: ${error.message}`);
-      else stats.rules += batch.length;
-    }
+    // 3. COL sheets (pricing_rules) — NOT synced
+    // Pricing rules are managed in the Pricing Rules UI only (one-time import done)
 
     return NextResponse.json({
       ok: true,
       synced_at: new Date().toISOString(),
       pricing_rows: stats.pricing,
-      rules_rows: stats.rules,
+      mapping_rows: mappingInserted,
       errors: stats.errors.length > 0 ? stats.errors : undefined,
     });
   } catch (e: any) {

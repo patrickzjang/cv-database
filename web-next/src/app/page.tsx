@@ -22,7 +22,7 @@ type FileItem = {
 type ImageRef = { name: string; url: string };
 
 type Row = Record<string, any>;
-const HIDDEN_SEARCH_COLUMNS = new Set(["CBV", "VAT", "COST", "MONTH", "BARCODE"]);
+const HIDDEN_SEARCH_COLUMNS = new Set(["MONTH"]);
 type MasterUploadResult = {
   file: string;
   brand?: string;
@@ -87,7 +87,7 @@ export default function Home() {
   const [searchStatus, setSearchStatus] = useState("No search yet.");
   const [searchInput, setSearchInput] = useState("");
   const [currentBrand, setCurrentBrand] = useState<Brand>("PAN");
-  const [activeTab, setActiveTab] = useState<"upload" | "master" | "search">("upload");
+  const [activeTab, setActiveTab] = useState<"upload" | "master" | "search">("search");
   const [pageSize, setPageSize] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
@@ -715,15 +715,15 @@ export default function Home() {
           </div>
 
           <div className="tabs">
-            <button className={`tab ${activeTab === "upload" ? "active" : ""}`} onClick={() => setActiveTab("upload")}>Image Uploader</button>
-            <button className={`tab ${activeTab === "master" ? "active" : ""}`} onClick={() => setActiveTab("master")}>Master Data Update</button>
             <button className={`tab ${activeTab === "search" ? "active" : ""}`} onClick={() => setActiveTab("search")}>Search Products</button>
+            <button className={`tab ${activeTab === "master" ? "active" : ""}`} onClick={() => setActiveTab("master")}>Master Data</button>
+            <button className={`tab ${activeTab === "upload" ? "active" : ""}`} onClick={() => setActiveTab("upload")}>Image Uploader</button>
           </div>
 
           {activeTab === "upload" && (
             <div className="card">
               <h2>Product Image Uploader</h2>
-              <p className="subtitle">Drop JPG files named like <code>SKU_1.jpg</code>, <code>SKU_2.jpg</code>. The SKU must exist in <code>core.master_pan</code>.</p>
+              <p className="subtitle">Drop JPG files named like <code>VARIATION_SKU_1.jpg</code>, <code>VARIATION_SKU_2.jpg</code>. The VARIATION_SKU must exist in the product master.</p>
 
               <div
                 id="dropzone"
@@ -773,49 +773,57 @@ export default function Home() {
 
           {activeTab === "master" && (
             <div className="card">
-              <h2>Master Data Update</h2>
-              <p className="subtitle">Upload CSV/XLS/XLSX named like <code>MASTER_PAN_DDMMYY.csv</code>. New version only, merge mode (insert new + update changed fields).</p>
-              <div className="template-guide">
-                <div className="template-guide-title">Template Guide</div>
-                <div className="template-guide-sub">
-                  Download blank template (headers only), fill rows, then rename file to
-                  {" "}
-                  <code>MASTER_(PAN|ARENA|DAYBREAK|HEELCARE)_DDMMYY</code>.
-                </div>
-                <div className="template-actions">
-                  <a className="ghost template-link" href="/templates/MASTER_TEMPLATE.csv" download>
-                    Download CSV Template
-                  </a>
-                  <a className="ghost template-link" href="/templates/MASTER_TEMPLATE.xlsx" download>
-                    Download XLSX Template
-                  </a>
-                </div>
-              </div>
-              <div className="actions">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  multiple
-                  onChange={(e) => setMasterFiles(Array.from(e.target.files || []))}
-                />
-                <button className="primary" disabled={masterFiles.length === 0 || masterUploading} onClick={uploadMasterFiles}>
-                  {masterUploading ? "Uploading..." : "Upload Master Files"}
+              <h2>Master Data</h2>
+              <p className="subtitle">Product master data is synced from Google Sheet. Edit data in the sheet, then sync to update the system.</p>
+
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16, marginBottom: 20 }}>
+                <a
+                  href="https://docs.google.com/spreadsheets/d/10WIc5xJHaPbZoCTHPY0jAe2BA_2VkvH_jALTgZJ1-54"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="primary"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", textDecoration: "none", borderRadius: 8, fontWeight: 600, fontSize: "0.92rem" }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                    <rect x="2" y="2" width="14" height="14" rx="2" />
+                    <path d="M2 7h14M2 12h14M7 2v14M12 2v14" />
+                  </svg>
+                  Open Google Sheet
+                </a>
+                <button
+                  className="ghost"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", fontWeight: 600, fontSize: "0.92rem" }}
+                  disabled={masterUploading}
+                  onClick={async () => {
+                    setMasterStatus("Syncing from Google Sheet...");
+                    setMasterUploading(true);
+                    try {
+                      const res = await fetch("/api/master-data/sync-gsheet", { method: "POST" });
+                      const json = await res.json();
+                      if (res.ok && json.ok) {
+                        setMasterStatus(`Synced! ${json.pricing_rows} SKUs + ${json.rules_rows} pricing rules updated.`);
+                      } else {
+                        setMasterStatus(`Error: ${json.error ?? "Sync failed"}`);
+                      }
+                    } catch {
+                      setMasterStatus("Sync failed — network error");
+                    }
+                    setMasterUploading(false);
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                    <path d="M2 8a6 6 0 0 1 10.3-4.1" /><path d="M14 8a6 6 0 0 1-10.3 4.1" />
+                    <path d="M12 1v3.5h-3.5" /><path d="M4 15v-3.5h3.5" />
+                  </svg>
+                  {masterUploading ? "Syncing..." : "Sync Now"}
                 </button>
-                <button className="ghost" disabled={masterUploading || masterFiles.length === 0} onClick={() => setMasterFiles([])}>
-                  Clear
-                </button>
               </div>
+
               <div className="status">{masterStatus}</div>
-              {masterFiles.length > 0 && (
-                <ul className="file-list">
-                  {masterFiles.map((f) => (
-                    <li key={f.name} className="file-item">
-                      <div className="name">{f.name}</div>
-                      <div className="status">{(f.size / 1024).toFixed(1)} KB</div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+
+              <div style={{ marginTop: 16, padding: "14px 18px", background: "var(--surface-2)", borderRadius: 10, fontSize: "0.88rem", color: "var(--text-muted)" }}>
+                <strong style={{ color: "var(--text)" }}>How it works:</strong> Edit product data (columns A–J) in the Google Sheet for any brand tab (DAYBREAK, PAN, HEELCARE, ARENA). Then click "Sync Now" or wait for the hourly auto-sync to update the system.
+              </div>
             </div>
           )}
 

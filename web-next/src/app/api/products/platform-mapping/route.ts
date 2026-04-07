@@ -42,7 +42,12 @@ export async function GET(req: Request) {
       .range(from, from + pageSize - 1);
 
     if (brand) {
-      query = query.eq("brand", brand.toUpperCase());
+      const b = brand.toUpperCase();
+      if (b === "PAN") {
+        query = query.in("brand", ["JN", "PN", "PAN"]);
+      } else {
+        query = query.eq("brand", b);
+      }
     }
     if (platform) {
       query = query.eq("platform", platform);

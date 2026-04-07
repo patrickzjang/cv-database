@@ -217,7 +217,7 @@ export default function NavBar() {
     fetch("/api/session", { cache: "no-store" })
       .then(r => r.json())
       .then(d => setAuth(Boolean(d?.authenticated)));
-  }, []);
+  }, [pathname]);
 
   if (!auth || pathname === "/login" || pathname.startsWith("/returns")) return null;
 

@@ -33,88 +33,39 @@ export async function GET(req: Request) {
       auth: { persistSession: false },
     });
 
-    // Build brand filter helper
-    function applyBrandFilter(q: any) {
-      if (!brand) return q;
-      const b = brand.toUpperCase();
-      if (b === "PAN") return q.in("brand", ["JN", "PN", "PAN"]);
-      return q.eq("brand", b);
-    }
-
-    // Step 1: Get ALL unique variation_skus (with filters) — paginate to overcome 1000 row limit
-    const allVarSet = new Set<string>();
-    let varOffset = 0;
-    const varBatchSize = 1000;
-    while (true) {
-      let varQuery = supabase
-        .schema("core")
-        .from("sku_pricing")
-        .select("variation_sku")
-        .range(varOffset, varOffset + varBatchSize - 1);
-      varQuery = applyBrandFilter(varQuery);
-      if (parentsSku) varQuery = varQuery.eq("parents_sku", parentsSku);
-      if (variationSku) varQuery = varQuery.eq("variation_sku", variationSku);
-      if (q) varQuery = varQuery.or(`item_sku.ilike.%${q}%,description.ilike.%${q}%,variation_sku.ilike.%${q}%`);
-
-      const { data: batch, error: varError } = await varQuery;
-      if (varError) {
-        return NextResponse.json({ error: varError.message }, { status: 500 });
-      }
-      if (!batch || batch.length === 0) break;
-      for (const r of batch) allVarSet.add(r.variation_sku as string);
-      if (batch.length < varBatchSize) break;
-      varOffset += varBatchSize;
-    }
-
-    const uniqueVars = [...allVarSet].sort();
-    const totalVariations = uniqueVars.length;
-
-    // Step 2: Paginate the variation list
+    // Simple ITEM_SKU pagination
     const from = (page - 1) * pageSize;
-    const pageVars = uniqueVars.slice(from, from + pageSize);
 
-    if (pageVars.length === 0) {
-      return NextResponse.json({
-        data: [], total: 0, totalVariations, currentVariations: 0,
-        page, pageSize, pageCount: Math.max(1, Math.ceil(totalVariations / pageSize)),
-      });
+    let query = supabase
+      .schema("core")
+      .from("sku_pricing")
+      .select("*", { count: "exact" })
+      .order("variation_sku", { ascending: true })
+      .order("item_sku", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    // Brand filter
+    if (brand) {
+      const b = brand.toUpperCase();
+      if (b === "PAN") query = query.in("brand", ["JN", "PN", "PAN"]);
+      else query = query.eq("brand", b);
+    }
+    if (parentsSku) query = query.eq("parents_sku", parentsSku);
+    if (variationSku) query = query.eq("variation_sku", variationSku);
+    if (q) query = query.or(`item_sku.ilike.%${q}%,description.ilike.%${q}%,variation_sku.ilike.%${q}%`);
+
+    const { data, error, count } = await query;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Step 3: Fetch ALL items for the variations in this page
-    // Supabase .in() has a limit on array size, and default row limit is 1000
-    // Split into chunks of 100 variations and paginate rows
-    const data: any[] = [];
-    const varChunkSize = 100;
-    for (let ci = 0; ci < pageVars.length; ci += varChunkSize) {
-      const varChunk = pageVars.slice(ci, ci + varChunkSize);
-      let rowOffset = 0;
-      while (true) {
-        const { data: batch, error } = await supabase
-          .schema("core")
-          .from("sku_pricing")
-          .select("*")
-          .in("variation_sku", varChunk)
-          .order("variation_sku", { ascending: true })
-          .order("item_sku", { ascending: true })
-          .range(rowOffset, rowOffset + 999);
-
-        if (error) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-        if (!batch || batch.length === 0) break;
-        data.push(...batch);
-        if (batch.length < 1000) break;
-        rowOffset += 1000;
-      }
-    }
-
-    const pageCount = Math.max(1, Math.ceil(totalVariations / pageSize));
+    const total = count ?? 0;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
     return NextResponse.json({
       data: data ?? [],
-      total: totalVariations,
-      totalVariations,
-      currentVariations: pageVars.length,
+      total,
+      totalVariations: total,
       page,
       pageSize,
       pageCount,

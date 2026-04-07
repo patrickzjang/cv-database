@@ -54,8 +54,9 @@ type PlatformMapping = {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const BRANDS = ["ALL", "DB", "PAN", "HC", "AN"] as const;
-const PLATFORMS = ["Shopee", "Lazada", "TTS", "Shopify"] as const;
+const BRANDS = ["PAN", "DB", "AN", "HC", "ALL"] as const;
+const PLATFORMS = ["Shopee", "Lazada", "TikTok", "Shopify"] as const;
+const PLATFORM_DB_KEY: Record<string, string> = { Shopee: "shopee", Lazada: "lazada", TikTok: "tiktok", Shopify: "shopify" };
 const TABS = ["Price Grid", "Pricing Rules", "Platform Mapping"] as const;
 type TabKey = (typeof TABS)[number];
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500, 1000] as const;
@@ -99,6 +100,45 @@ function marginTextColor(margin: number | null | undefined): string {
 
 function groupRowBg(index: number): string {
   return index % 2 === 0 ? "transparent" : "var(--surface-2)";
+}
+
+// ─── Brand & Platform Colors ────────────────────────────────────────────────
+
+const BRAND_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  PAN: { bg: "rgba(239,68,68,0.08)", color: "#ef4444", border: "rgba(239,68,68,0.2)" },
+  PN:  { bg: "rgba(239,68,68,0.08)", color: "#ef4444", border: "rgba(239,68,68,0.2)" },
+  JN:  { bg: "rgba(249,115,22,0.08)", color: "#f97316", border: "rgba(249,115,22,0.2)" },
+  DB:  { bg: "rgba(52,211,153,0.08)", color: "#10b981", border: "rgba(52,211,153,0.2)" },
+  HC:  { bg: "rgba(236,72,153,0.08)", color: "#db2777", border: "rgba(236,72,153,0.2)" },
+  AN:  { bg: "rgba(0,0,0,0.06)", color: "#111", border: "rgba(0,0,0,0.15)" },
+};
+
+const PLATFORM_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  shopee:  { bg: "rgba(238,77,45,0.08)", color: "#ee4d2d", border: "rgba(238,77,45,0.2)" },
+  lazada:  { bg: "rgba(15,19,109,0.08)", color: "#0f136d", border: "rgba(15,19,109,0.2)" },
+  tiktok:  { bg: "rgba(0,0,0,0.06)", color: "#111", border: "rgba(0,0,0,0.15)" },
+  shopify: { bg: "rgba(150,191,72,0.08)", color: "#5e8e3e", border: "rgba(150,191,72,0.2)" },
+};
+
+function BrandBadge({ brand }: { brand: string }) {
+  const c = BRAND_COLORS[brand] ?? { bg: "var(--surface-2)", color: "var(--text-muted)", border: "var(--border-2)" };
+  return (
+    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
+      {brand}
+    </span>
+  );
+}
+
+function PlatformBadge({ platform, status = "listed" }: { platform: string; status?: string }) {
+  const key = platform.toLowerCase();
+  const c = status === "listed"
+    ? (PLATFORM_COLORS[key] ?? { bg: "var(--surface-2)", color: "var(--text-muted)", border: "var(--border-2)" })
+    : { bg: "rgba(220,38,38,0.08)", color: "var(--error)", border: "rgba(220,38,38,0.2)" };
+  return (
+    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
+      {platform}
+    </span>
+  );
 }
 
 // ─── Inline Editable Cell ────────────────────────────────────────────────────
@@ -371,7 +411,7 @@ export default function PricingPage() {
   // ── Price Grid state ──
   const [gridData, setGridData] = useState<SkuPricing[]>([]);
   const [gridTotal, setGridTotal] = useState(0);
-  const [gridBrand, setGridBrand] = useState("ALL");
+  const [gridBrand, setGridBrand] = useState("PAN");
   const [gridSearch, setGridSearch] = useState("");
   const [gridPage, setGridPage] = useState(1);
   const [gridPageSize, setGridPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -444,7 +484,7 @@ export default function PricingPage() {
   // ── Pricing Rules state ──
   const [rulesData, setRulesData] = useState<PricingRule[]>([]);
   const [rulesTotal, setRulesTotal] = useState(0);
-  const [rulesBrand, setRulesBrand] = useState("ALL");
+  const [rulesBrand, setRulesBrand] = useState("PAN");
   const [rulesPage, setRulesPage] = useState(1);
   const [rulesPageSize, setRulesPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [rulesLoading, setRulesLoading] = useState(false);
@@ -454,7 +494,7 @@ export default function PricingPage() {
 
   // ── Platform Mapping state ──
   const [mappingData, setMappingData] = useState<PlatformMapping[]>([]);
-  const [mappingBrand, setMappingBrand] = useState("ALL");
+  const [mappingBrand, setMappingBrand] = useState("PAN");
   const [mappingPlatform, setMappingPlatform] = useState("ALL");
   const [mappingStatus, setMappingStatus] = useState("all");
   const [mappingLoading, setMappingLoading] = useState(false);
@@ -514,18 +554,25 @@ export default function PricingPage() {
   const fetchMapping = useCallback(async () => {
     setMappingLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (mappingBrand !== "ALL") params.set("brand", mappingBrand);
-      if (mappingPlatform !== "ALL") params.set("platform", mappingPlatform);
-      if (mappingStatus !== "all") params.set("listing_status", mappingStatus);
-      const res = await fetch(`/api/products/platform-mapping?${params}`);
-      const json = await res.json();
-      if (res.ok) {
-        setMappingData(json.data ?? []);
-        setMappingStats(json.stats ?? {});
-      } else {
-        setToast({ message: json.error ?? "Failed to load mappings", type: "error" });
+      // Fetch all pages to group by variation_sku
+      const allData: PlatformMapping[] = [];
+      let page = 1;
+      while (true) {
+        const params = new URLSearchParams();
+        if (mappingBrand !== "ALL") params.set("brand", mappingBrand);
+        if (mappingPlatform !== "ALL") params.set("platform", mappingPlatform);
+        if (mappingStatus !== "all") params.set("listing_status", mappingStatus);
+        params.set("page", String(page));
+        params.set("pageSize", "500");
+        const res = await fetch(`/api/products/platform-mapping?${params}`);
+        const json = await res.json();
+        if (!res.ok) break;
+        const batch = json.data ?? [];
+        allData.push(...batch);
+        if (batch.length < 500) break;
+        page++;
       }
+      setMappingData(allData);
     } catch (e: any) {
       setToast({ message: e.message ?? "Network error", type: "error" });
     } finally {
@@ -536,7 +583,7 @@ export default function PricingPage() {
   // ── Load data on tab / filter change ───────────────────────────────────────
 
   useEffect(() => {
-    if (activeTab === "Price Grid") fetchGrid();
+    if (activeTab === "Price Grid") { fetchGrid(); fetchMapping(); }
   }, [activeTab, fetchGrid]);
 
   useEffect(() => {
@@ -796,18 +843,45 @@ export default function PricingPage() {
               </button>
             ))}
           </div>
-          <button
-            className="primary"
-            onClick={syncGoogleSheet}
-            disabled={syncing}
-            style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-              <path d="M2 8a6 6 0 0 1 10.3-4.1" /><path d="M14 8a6 6 0 0 1-10.3 4.1" />
-              <path d="M12 1v3.5h-3.5" /><path d="M4 15v-3.5h3.5" />
-            </svg>
-            {syncing ? "Syncing..." : "Sync Google Sheet"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="ghost"
+              onClick={async () => {
+                setSyncing(true);
+                setSyncProgress({ active: true, pct: 20, label: "Pushing prices to Google Sheet..." });
+                let pct = 20;
+                const timer = setInterval(() => { pct = Math.min(pct + 5, 90); setSyncProgress(p => p.active && p.pct < 100 ? { ...p, pct: Math.round(pct) } : p); }, 500);
+                try {
+                  const res = await fetch("/api/master-data/write-gsheet", { method: "POST" });
+                  clearInterval(timer);
+                  const json = await res.json();
+                  setSyncProgress({ active: true, pct: 100, label: "Complete!" });
+                  if (json.ok) setToast({ message: `Pushed prices to Sheet: ${JSON.stringify(json.written)}`, type: "ok" });
+                  else setToast({ message: json.error ?? "Push failed", type: "error" });
+                } catch { clearInterval(timer); setToast({ message: "Push failed", type: "error" }); }
+                setTimeout(() => setSyncProgress({ active: false, pct: 0, label: "" }), 2000);
+                setSyncing(false);
+              }}
+              disabled={syncing}
+              style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M8 3v10" /><path d="M4 7l4-4 4 4" />
+              </svg>
+              Push to Sheet
+            </button>
+            <button
+              className="primary"
+              onClick={syncGoogleSheet}
+              disabled={syncing}
+              style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M8 13V3" /><path d="M12 9l-4 4-4-4" />
+              </svg>
+              Pull from Sheet
+            </button>
+          </div>
         </div>
 
         {/* ════════════════════════════════════════════════════════════════════
@@ -869,7 +943,7 @@ export default function PricingPage() {
               {/* Info bar: total count + rows per page */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: "0.85rem" }}>
                 <span style={{ color: "var(--text-muted)" }}>
-                  Showing <strong style={{ color: "var(--text)" }}>{varSkuCount}</strong> of <strong style={{ color: "var(--text)" }}>{gridTotal.toLocaleString()}</strong> variations
+                  Showing <strong style={{ color: "var(--text)" }}>{gridData.length}</strong> of <strong style={{ color: "var(--text)" }}>{gridTotal.toLocaleString()}</strong> SKUs
                   {selectedVars.size > 0 && <> &middot; <span style={{ color: "var(--app-accent)", fontWeight: 600 }}>{selectedVars.size} selected</span></>}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -905,10 +979,10 @@ export default function PricingPage() {
                         <th style={{ width: 36, textAlign: "center" }}>
                           <input
                             type="checkbox"
-                            checked={groupedGrid.length > 0 && selectedVars.size === groupedGrid.length}
+                            checked={gridData.length > 0 && selectedVars.size === gridData.length}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedVars(new Set(groupedGrid.map((g) => g.key)));
+                                setSelectedVars(new Set(gridData.map((r) => r.item_sku)));
                               } else {
                                 setSelectedVars(new Set());
                               }
@@ -916,80 +990,95 @@ export default function PricingPage() {
                             style={{ cursor: "pointer" }}
                           />
                         </th>
-                        <th style={{ width: 150 }}>Variation SKU</th>
+                        <th style={{ minWidth: 150 }}>ITEM SKU</th>
+                        <th style={{ minWidth: 120 }}>Variation SKU</th>
                         <th style={{ minWidth: 180 }}>Description</th>
-                        <th style={{ width: 60 }}>Brand</th>
-                        <th style={{ width: 50, textAlign: "center" }}>Sizes</th>
-                        <th style={{ width: 90, textAlign: "right" }}>RRP</th>
-                        <th style={{ width: 90, textAlign: "right" }}>RSP</th>
-                        <th style={{ width: 95, textAlign: "right" }}>Campaign A</th>
-                        <th style={{ width: 85, textAlign: "right" }}>Mega</th>
-                        <th style={{ width: 95, textAlign: "right" }}>Flash Sale</th>
-                        <th style={{ width: 90, textAlign: "right" }}>Min Price</th>
-                        <th style={{ width: 85, textAlign: "right" }}>COGS</th>
-                        <th style={{ width: 80, textAlign: "right" }}>Margin%</th>
+                        <th style={{ minWidth: 50 }}>Brand</th>
+                        <th style={{ minWidth: 90, textAlign: "right" }}>RRP</th>
+                        <th style={{ minWidth: 90, textAlign: "right" }}>RSP</th>
+                        <th style={{ minWidth: 95, textAlign: "right" }}>Campaign A</th>
+                        <th style={{ minWidth: 85, textAlign: "right" }}>Mega</th>
+                        <th style={{ minWidth: 95, textAlign: "right" }}>Flash Sale</th>
+                        <th style={{ minWidth: 90, textAlign: "right" }}>Min Price</th>
+                        <th style={{ minWidth: 85, textAlign: "right" }}>COGS</th>
+                        <th style={{ minWidth: 80, textAlign: "right" }}>Margin%</th>
+                        {/* Platform IDs — scroll right to see */}
+                        <th style={{ minWidth: 130, borderLeft: "2px solid var(--border-2)" }}>Shopee Product ID</th>
+                        <th style={{ minWidth: 130 }}>Shopee Option ID</th>
+                        <th style={{ minWidth: 130, borderLeft: "2px solid var(--border-2)" }}>Lazada Product ID</th>
+                        <th style={{ minWidth: 150 }}>Lazada Shop SKU</th>
+                        <th style={{ minWidth: 130, borderLeft: "2px solid var(--border-2)" }}>TikTok Product ID</th>
+                        <th style={{ minWidth: 130 }}>TikTok SKU ID</th>
+                        <th style={{ minWidth: 130, borderLeft: "2px solid var(--border-2)" }}>Shopify Product ID</th>
+                        <th style={{ minWidth: 130 }}>Shopify SKU ID</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {groupedGrid.map((group, gi) => {
-                        const rep = group.rows[0]; // representative row
-                        const sizeCount = group.rows.length;
+                      {gridData.map((row, gi) => {
+                        // Find platform mappings for this item_sku
+                        const mp = (mappingData ?? []).reduce((acc: Record<string, PlatformMapping>, m) => {
+                          if (m.item_sku === row.item_sku) acc[m.platform] = m;
+                          return acc;
+                        }, {});
                         return (
                           <tr
-                            key={group.key}
+                            key={row.item_sku}
                             data-row-idx={gi}
-                            style={{ background: selectedVars.has(group.key) ? "rgba(30,64,175,0.06)" : groupRowBg(gi) }}
+                            style={{ background: selectedVars.has(row.item_sku) ? "rgba(30,64,175,0.06)" : groupRowBg(gi) }}
                           >
                             <td style={{ textAlign: "center" }}>
                               <input
                                 type="checkbox"
-                                checked={selectedVars.has(group.key)}
+                                checked={selectedVars.has(row.item_sku)}
                                 onChange={(e) => {
                                   setSelectedVars((prev) => {
                                     const next = new Set(prev);
-                                    if (e.target.checked) next.add(group.key);
-                                    else next.delete(group.key);
+                                    if (e.target.checked) next.add(row.item_sku);
+                                    else next.delete(row.item_sku);
                                     return next;
                                   });
                                 }}
                                 style={{ cursor: "pointer" }}
                               />
                             </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.84rem", fontWeight: 600 }}>
-                              <a href={`/products/${encodeURIComponent(group.key)}`} style={{ color: "var(--app-accent)", textDecoration: "none" }} title="View product detail">
-                                {group.key}
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", fontWeight: 600 }}>
+                              {row.item_sku}
+                            </td>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                              <a href={`/products/${encodeURIComponent(row.variation_sku)}`} style={{ color: "var(--app-accent)", textDecoration: "none" }}>
+                                {row.variation_sku}
                               </a>
                             </td>
                             <td style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                              {rep.description ?? "–"}
+                              {row.description ?? "–"}
                             </td>
                             <td>
-                              <span className="badge badge-brand" style={{ fontSize: "0.72rem" }}>
-                                {rep.brand}
-                              </span>
-                            </td>
-                            <td style={{ textAlign: "center", fontSize: "0.82rem", color: "var(--text-muted)" }}>
-                              {sizeCount}
+                              <BrandBadge brand={row.brand} />
                             </td>
                             {(["rrp", "rsp", "price_campaign_a", "price_mega", "price_flash_sale", "min_price"] as const).map((col) => (
                               <td key={col} style={{ textAlign: "right" }}>
-                                <span style={{ fontSize: "0.85rem" }}>{fmt((rep as any)[col])}</span>
+                                <span style={{ fontSize: "0.85rem" }}>{fmt((row as any)[col])}</span>
                               </td>
                             ))}
                             <td style={{ textAlign: "right", color: "var(--text-muted)" }}>
-                              {fmt(rep.cogs_inc_vat)}
+                              {fmt(row.cogs_inc_vat)}
                             </td>
-                            <td
-                              style={{
-                                textAlign: "right",
-                                background: marginColor(rep.est_margin),
-                                color: marginTextColor(rep.est_margin),
-                                fontWeight: 700,
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              {marginPct(rep.est_margin) != null ? `${marginPct(rep.est_margin)!.toFixed(1)}%` : "–"}
+                            <td style={{ textAlign: "right", background: marginColor(row.est_margin), color: marginTextColor(row.est_margin), fontWeight: 700, fontSize: "0.85rem" }}>
+                              {marginPct(row.est_margin) != null ? `${marginPct(row.est_margin)!.toFixed(1)}%` : "–"}
                             </td>
+                            {/* Platform columns — scroll right */}
+                            {/* Shopee: Product ID + Option ID (รหัสตัวเลือกสินค้า) */}
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.shopee ? "var(--text)" : "var(--text-muted)", borderLeft: "2px solid var(--border-2)" }}>{mp.shopee?.platform_product_id ?? "–"}</td>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.shopee ? "var(--text)" : "var(--text-muted)" }}>{mp.shopee?.platform_option_id ?? "–"}</td>
+                            {/* Lazada: Product ID + ร้าน sku (Shop SKU) */}
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.lazada ? "var(--text)" : "var(--text-muted)", borderLeft: "2px solid var(--border-2)" }}>{mp.lazada?.platform_product_id ?? "–"}</td>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.lazada ? "var(--text)" : "var(--text-muted)" }}>{mp.lazada?.platform_option_id ?? "–"}</td>
+                            {/* TikTok: รหัสสินค้า + SKU ID */}
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.tiktok ? "var(--text)" : "var(--text-muted)", borderLeft: "2px solid var(--border-2)" }}>{mp.tiktok?.platform_product_id ?? "–"}</td>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.tiktok ? "var(--text)" : "var(--text-muted)" }}>{mp.tiktok?.platform_option_id ?? "–"}</td>
+                            {/* Shopify: Product ID + SKU ID */}
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.shopify ? "var(--text)" : "var(--text-muted)", borderLeft: "2px solid var(--border-2)" }}>{mp.shopify?.platform_product_id || "–"}</td>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.78rem", color: mp.shopify ? "var(--text)" : "var(--text-muted)" }}>{mp.shopify?.platform_option_id || mp.shopify?.platform_sku || "–"}</td>
                           </tr>
                         );
                       })}
@@ -1133,7 +1222,7 @@ export default function PricingPage() {
                             <EditableCell value={rule.product_name} format="text" onSave={(v) => saveRuleCell(rule, "product_name", v)} />
                           </td>
                           <td>
-                            <span className="badge badge-brand">{rule.brand}</span>
+                            <BrandBadge brand={rule.brand} />
                           </td>
                           <td style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
                             {rule.collection_key ?? "–"}
@@ -1203,46 +1292,73 @@ export default function PricingPage() {
         {/* ════════════════════════════════════════════════════════════════════
             TAB 3: PLATFORM MAPPING
         ════════════════════════════════════════════════════════════════════ */}
-        {activeTab === "Platform Mapping" && (
+        {activeTab === "Platform Mapping" && (() => {
+          // Group mapping data by variation_sku (derive from item_sku)
+          const varMappingMap = new Map<string, { brand: string; platforms: Map<string, { listed: number; total: number }> }>();
+          for (const m of mappingData) {
+            // Derive variation_sku from item_sku
+            const varSku = m.brand === "DB"
+              ? m.item_sku.replace(/(-\d{1,2}){1,2}$/, "").replace(/-(0[SML]|XL|2L|00)$/, "")
+              : m.item_sku.slice(0, 9);
+
+            if (!varMappingMap.has(varSku)) {
+              varMappingMap.set(varSku, { brand: m.brand, platforms: new Map() });
+            }
+            const entry = varMappingMap.get(varSku)!;
+            if (!entry.platforms.has(m.platform)) {
+              entry.platforms.set(m.platform, { listed: 0, total: 0 });
+            }
+            const pEntry = entry.platforms.get(m.platform)!;
+            pEntry.total++;
+            if (m.listing_status === "listed") pEntry.listed++;
+          }
+
+          const PLATFORM_ORDER = ["shopee", "lazada", "tiktok", "shopify"];
+          const sortPlatforms = (arr: string[]) => arr.sort((a, b) => {
+            const ai = PLATFORM_ORDER.indexOf(a.toLowerCase().split(" ")[0]);
+            const bi = PLATFORM_ORDER.indexOf(b.toLowerCase().split(" ")[0]);
+            return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+          });
+
+          const varMappingList = [...varMappingMap.entries()].map(([varSku, data]) => {
+            const listedPlatforms: string[] = [];
+            const notListedPlatforms: string[] = [];
+            const partialPlatforms: string[] = [];
+            for (const [pName, counts] of data.platforms) {
+              if (counts.listed === counts.total && counts.total > 0) listedPlatforms.push(pName);
+              else if (counts.listed === 0) notListedPlatforms.push(pName);
+              else partialPlatforms.push(`${pName} (${counts.listed}/${counts.total})`);
+            }
+            const missingPlatforms = PLATFORM_ORDER.filter((p) => !data.platforms.has(p));
+
+            // Sort all arrays in fixed order: shopee → lazada → tiktok → shopify
+            sortPlatforms(listedPlatforms);
+            sortPlatforms(notListedPlatforms);
+            sortPlatforms(partialPlatforms);
+            sortPlatforms(missingPlatforms);
+
+            return { varSku, brand: data.brand, listedPlatforms, notListedPlatforms, partialPlatforms, missingPlatforms };
+          });
+
+          // Stats
+          const platformStats: Record<string, number> = {};
+          for (const v of varMappingList) {
+            for (const p of v.listedPlatforms) {
+              platformStats[p] = (platformStats[p] || 0) + 1;
+            }
+          }
+
+          return (
           <div>
             {/* Summary stats */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                gap: 12,
-                marginBottom: 16,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
               {PLATFORMS.map((p) => (
                 <div key={p} className="card" style={{ padding: "16px 20px", textAlign: "center" }}>
-                  <div
-                    style={{
-                      fontSize: "0.72rem",
-                      fontWeight: 700,
-                      color: "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      marginBottom: 6,
-                    }}
-                  >
-                    {p}
+                  <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{p}</div>
+                  <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--app-accent)" }}>
+                    {(platformStats[PLATFORM_DB_KEY[p] ?? p.toLowerCase()] ?? 0).toLocaleString("th-TH")}
                   </div>
-                  <div
-                    style={{
-                      fontSize: "1.6rem",
-                      fontWeight: 700,
-                      background: "var(--grad)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                      backgroundClip: "text",
-                    }}
-                  >
-                    {(mappingStats[p] ?? 0).toLocaleString("th-TH")}
-                  </div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>
-                    listed
-                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>variations listed</div>
                 </div>
               ))}
             </div>
@@ -1252,148 +1368,73 @@ export default function PricingPage() {
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <div className="brand-tabs">
                   {BRANDS.map((b) => (
-                    <button
-                      key={b}
-                      className={`brand-tab${mappingBrand === b ? " active" : ""}`}
-                      onClick={() => setMappingBrand(b)}
-                    >
-                      {b}
-                    </button>
+                    <button key={b} className={`brand-tab${mappingBrand === b ? " active" : ""}`} onClick={() => setMappingBrand(b)}>{b}</button>
                   ))}
                 </div>
-
-                <select
-                  value={mappingPlatform}
-                  onChange={(e) => setMappingPlatform(e.target.value)}
-                  style={{ padding: "8px 12px", borderRadius: 10 }}
-                >
-                  <option value="ALL">All Platforms</option>
-                  {PLATFORMS.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={mappingStatus}
-                  onChange={(e) => setMappingStatus(e.target.value)}
-                  style={{ padding: "8px 12px", borderRadius: 10 }}
-                >
-                  <option value="all">All Status</option>
-                  <option value="listed">Listed</option>
-                  <option value="not_listed">Not Listed</option>
-                </select>
-
                 <div style={{ marginLeft: "auto" }}>
-                  <button className="ghost" onClick={() => mappingFileRef.current?.click()}>
-                    Import SKU Sheet
-                  </button>
-                  <input
-                    ref={mappingFileRef}
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleImport(f, "/api/products/pricing/import", fetchMapping);
-                      e.target.value = "";
-                    }}
-                  />
+                  <button className="ghost" onClick={() => mappingFileRef.current?.click()}>Import SKU Sheet</button>
+                  <input ref={mappingFileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f, "/api/products/pricing/import", fetchMapping); e.target.value = ""; }} />
                 </div>
+              </div>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: 8 }}>
+                Showing <strong style={{ color: "var(--text)" }}>{varMappingList.length}</strong> variations
               </div>
             </div>
 
-            {/* Mapping table */}
+            {/* Mapping table — grouped by variation_sku */}
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {mappingLoading ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
-                  Loading mappings...
-                </div>
-              ) : mappingData.length === 0 ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
-                  No platform mappings found. Import a SKU sheet to get started.
-                </div>
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>Loading mappings...</div>
+              ) : varMappingList.length === 0 ? (
+                <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>No platform mappings found.</div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
                     <thead>
                       <tr>
-                        <th style={{ width: 140 }}>ITEM SKU</th>
+                        <th style={{ width: 150 }}>Variation SKU</th>
                         <th style={{ width: 60 }}>Brand</th>
-                        <th style={{ width: 90 }}>Platform</th>
-                        <th style={{ width: 140 }}>Platform SKU</th>
-                        <th style={{ width: 130 }}>Product ID</th>
-                        <th style={{ width: 130 }}>Option ID</th>
-                        <th style={{ width: 100 }}>Status</th>
+                        <th style={{ minWidth: 200 }}>Listed Platforms</th>
+                        <th style={{ minWidth: 200 }}>Not Listed / Incomplete</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {mappingData.map((m, i) => {
-                        const isListed = m.listing_status === "listed";
+                      {varMappingList.map((v, i) => {
+                        const allListed = v.notListedPlatforms.length === 0 && v.partialPlatforms.length === 0 && v.missingPlatforms.length === 0;
                         return (
-                          <tr key={m.id ?? i}>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", fontWeight: 600 }}>
-                              {m.item_sku}
+                          <tr key={v.varSku} style={{ background: i % 2 === 0 ? "transparent" : "var(--surface-2)" }}>
+                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.84rem", fontWeight: 600 }}>
+                              <a href={`/products/${encodeURIComponent(v.varSku)}`} style={{ color: "var(--app-accent)", textDecoration: "none" }}>{v.varSku}</a>
+                            </td>
+                            <td><BrandBadge brand={v.brand} /></td>
+                            <td>
+                              {v.listedPlatforms.length > 0 ? (
+                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                  {v.listedPlatforms.map((p) => (
+                                    <PlatformBadge key={p} platform={p} status="listed" />
+                                  ))}
+                                </div>
+                              ) : (
+                                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>–</span>
+                              )}
                             </td>
                             <td>
-                              <span className="badge badge-brand">{m.brand}</span>
-                            </td>
-                            <td>
-                              <span
-                                className="badge"
-                                style={{
-                                  background:
-                                    m.platform === "Shopee"
-                                      ? "rgba(238, 77, 45, 0.08)"
-                                      : m.platform === "Lazada"
-                                        ? "rgba(15, 22, 120, 0.08)"
-                                        : m.platform === "TTS"
-                                          ? "rgba(0, 0, 0, 0.06)"
-                                          : "rgba(150, 191, 72, 0.08)",
-                                  color:
-                                    m.platform === "Shopee"
-                                      ? "#ee4d2d"
-                                      : m.platform === "Lazada"
-                                        ? "#0f1678"
-                                        : m.platform === "TTS"
-                                          ? "var(--text)"
-                                          : "#96bf48",
-                                  borderColor:
-                                    m.platform === "Shopee"
-                                      ? "rgba(238, 77, 45, 0.2)"
-                                      : m.platform === "Lazada"
-                                        ? "rgba(15, 22, 120, 0.2)"
-                                        : m.platform === "TTS"
-                                          ? "var(--border-2)"
-                                          : "rgba(150, 191, 72, 0.2)",
-                                }}
-                              >
-                                {m.platform}
-                              </span>
-                            </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
-                              {m.platform_sku ?? "–"}
-                            </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
-                              {m.platform_product_id ?? "–"}
-                            </td>
-                            <td style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: "0.82rem", color: "var(--text-muted)" }}>
-                              {m.platform_option_id ?? "–"}
-                            </td>
-                            <td>
-                              <span
-                                className="badge"
-                                style={{
-                                  background: isListed
-                                    ? "rgba(5, 150, 105, 0.08)"
-                                    : "rgba(220, 38, 38, 0.08)",
-                                  color: isListed ? "var(--ok)" : "var(--error)",
-                                  borderColor: isListed
-                                    ? "rgba(5, 150, 105, 0.2)"
-                                    : "rgba(220, 38, 38, 0.2)",
-                                }}
-                              >
-                                {isListed ? "Listed" : "Not Listed"}
-                              </span>
+                              {allListed ? (
+                                <span style={{ color: "var(--ok)", fontSize: "0.82rem", fontWeight: 600 }}>All listed</span>
+                              ) : (
+                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                  {v.notListedPlatforms.map((p) => (
+                                    <PlatformBadge key={p} platform={p} status="not_listed" />
+                                  ))}
+                                  {v.partialPlatforms.map((p) => (
+                                    <span key={p} style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, background: "rgba(217,119,6,0.08)", color: "var(--warn)", border: "1px solid rgba(217,119,6,0.2)" }}>{p}</span>
+                                  ))}
+                                  {v.missingPlatforms.map((p) => (
+                                    <span key={p} style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, background: "rgba(156,163,175,0.08)", color: "var(--text-muted)", border: "1px solid var(--border-2)" }}>{p} (missing)</span>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1404,7 +1445,8 @@ export default function PricingPage() {
               )}
             </div>
           </div>
-        )}
+        );
+        })()}
       </div>
 
       {/* Toast */}
