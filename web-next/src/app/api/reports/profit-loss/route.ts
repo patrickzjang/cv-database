@@ -194,7 +194,9 @@ export async function POST(req: Request) {
 
     for (const order of orders) {
       const platform = order.shop_name || "Unknown";
-      const amount = Number(order.amount) || 0;
+      const paidAmount = Number(order.paid_amount) || 0;
+      const platDiscount = Number(order.platform_free_amount) || 0;
+      const amount = paidAmount + platDiscount; // Gross Revenue = paid + platform discount (same as Dashboard)
       const freightIncome = Number(order.freight_income) || 0;
       const freightFee = Number(order.freight_fee) || 0;
 
@@ -310,10 +312,14 @@ export async function POST(req: Request) {
     const skuProfitability = Object.entries(skuStats)
       .map(([sku_id, ss]) => ({
         sku_id,
-        revenue: Math.round(ss.revenue * 100) / 100,
-        cogs: Math.round(ss.cogs * 100) / 100,
-        profit: Math.round((ss.revenue - ss.cogs) * 100) / 100,
+        sku: sku_id,
+        name: ss.name || "",
+        revenue: r2(ss.revenue),
+        cogs: r2(ss.cogs),
+        cost: r2(ss.cogs),
+        profit: r2(ss.revenue - ss.cogs),
         qty: ss.qty,
+        margin_pct: ss.revenue > 0 ? r2((ss.revenue - ss.cogs) / ss.revenue * 100) : 0,
       }))
       .sort((a, b) => b.profit - a.profit)
       .slice(0, 50);
@@ -340,11 +346,16 @@ export async function POST(req: Request) {
       dateFrom,
       dateTo,
       totals: {
-        gross_revenue: Math.round(totals.gross_revenue * 100) / 100,
-        platform_fees: Math.round(totals.platform_fees * 100) / 100,
-        shipping_net: Math.round(totals.shipping_net * 100) / 100,
-        cogs: Math.round(totals.cogs * 100) / 100,
-        net_profit: Math.round(totals.net_profit * 100) / 100,
+        gross_revenue: r2(totals.gross_revenue),
+        cogs: r2(totals.cogs),
+        gross_profit: r2(totals.gross_profit),
+        commission: r2(totals.commission),
+        service_fee: r2(totals.service_fee),
+        payment_fee: r2(totals.payment_fee),
+        other_fee: r2(totals.other_fee),
+        platform_fees: r2(totals.platform_fees),
+        shipping_net: r2(totals.shipping_net),
+        net_profit: r2(totals.net_profit),
         order_count: totals.order_count,
       },
       platformSummary,

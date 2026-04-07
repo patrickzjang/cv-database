@@ -414,10 +414,34 @@ export default function ProfitLossPage() {
             shipping_net: totals.shipping_net ?? 0,
             net_profit: totals.net_profit ?? 0,
           },
-          platformBreakdown: json.platformSummary ?? json.platformBreakdown ?? [],
-          dailyTrend: json.dailyTrend ?? [],
-          topSkus: json.skuProfitability?.slice(0, 20) ?? json.topSkus ?? [],
-          bottomSkus: json.skuProfitability?.slice(-20).reverse() ?? json.bottomSkus ?? [],
+          platformBreakdown: (json.platformSummary ?? json.platformBreakdown ?? []).map((p: any) => ({
+            ...p,
+            orders: p.orders ?? p.order_count ?? 0,
+          })),
+          dailyTrend: (json.dailyTrend ?? []).map((d: any) => ({
+            day: d.day ?? d.date ?? "",
+            gross_revenue: d.gross_revenue ?? 0,
+            net_profit: d.net_profit ?? 0,
+            cogs: d.cogs ?? 0,
+          })),
+          topSkus: (json.skuProfitability?.slice(0, 20) ?? json.topSkus ?? []).map((s: any) => ({
+            sku: s.sku ?? s.sku_id ?? "",
+            name: s.name ?? "",
+            qty_sold: s.qty_sold ?? s.qty ?? 0,
+            revenue: s.revenue ?? 0,
+            cost: s.cost ?? s.cogs ?? 0,
+            profit: s.profit != null ? s.profit : (s.revenue ?? 0) - (s.cost ?? s.cogs ?? 0),
+            margin_pct: s.revenue > 0 ? ((s.profit != null ? s.profit : (s.revenue ?? 0) - (s.cost ?? s.cogs ?? 0)) / s.revenue * 100) : 0,
+          })),
+          bottomSkus: (json.skuProfitability?.slice(-20).reverse() ?? json.bottomSkus ?? []).map((s: any) => ({
+            sku: s.sku ?? s.sku_id ?? "",
+            name: s.name ?? "",
+            qty_sold: s.qty_sold ?? s.qty ?? 0,
+            revenue: s.revenue ?? 0,
+            cost: s.cost ?? s.cogs ?? 0,
+            profit: s.profit != null ? s.profit : (s.revenue ?? 0) - (s.cost ?? s.cogs ?? 0),
+            margin_pct: s.revenue > 0 ? ((s.profit != null ? s.profit : (s.revenue ?? 0) - (s.cost ?? s.cogs ?? 0)) / s.revenue * 100) : 0,
+          })),
         });
       }
     } catch (e: any) {
@@ -472,7 +496,7 @@ export default function ProfitLossPage() {
     <div>
       <div className="page">
         {/* ── Filters ── */}
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16, position: "relative", zIndex: 50 }}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div>
               <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>TIME RANGE</div>
