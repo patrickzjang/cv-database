@@ -1202,7 +1202,6 @@ export default function PricingPage() {
                         <th style={{ width: 110 }}>Group</th>
                         <th style={{ width: 100 }}>Category</th>
                         <th style={{ width: 100 }}>Sub-Category</th>
-                        <th style={{ width: 100 }}>Collection</th>
                         <th style={{ width: 75, textAlign: "right" }}>%RSP</th>
                         <th style={{ width: 75, textAlign: "right" }}>%A</th>
                         <th style={{ width: 75, textAlign: "right" }}>%Mega</th>
@@ -1232,9 +1231,6 @@ export default function PricingPage() {
                           </td>
                           <td>
                             <EditableCell value={rule.sub_category} format="text" onSave={(v) => saveRuleCell(rule, "sub_category", v)} />
-                          </td>
-                          <td>
-                            <EditableCell value={rule.collection} format="text" onSave={(v) => saveRuleCell(rule, "collection", v)} />
                           </td>
                           {(["pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"] as const).map((col) => (
                             <td key={col} style={{

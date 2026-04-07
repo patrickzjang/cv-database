@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
-import { BUCKET, SKU_COLUMN } from "@/lib/config";
 import { isAuthenticated } from "@/lib/auth";
 import { isMaintenanceMode } from "@/lib/maintenance";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
-import {
-  SUPABASE_SERVICE_ROLE_KEY,
-  SUPABASE_URL,
-  callUpdateProductImages,
-  getTablesForBrand,
-  requireServerConfig,
-  supabaseRestGet,
-} from "@/lib/server-supabase";
+import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "@/lib/server-supabase";
+import { createClient } from "@supabase/supabase-js";
+import { getR2Client, R2_MAIN_IMAGES_BUCKET, mainImageKey } from "@/lib/r2";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 
 export async function POST(req: Request) {
   try {
@@ -25,7 +20,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Too many upload requests. Please wait 1 minute." }, { status: 429 });
     }
 
-    requireServerConfig();
     const form = await req.formData();
     const file = form.get("file");
     const sku = String(form.get("sku") || "").trim();
@@ -35,57 +29,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
     if (!sku) {
-      return NextResponse.json({ error: "Missing SKU" }, { status: 400 });
+      return NextResponse.json({ error: "Missing VARIATION_SKU" }, { status: 400 });
     }
     const lower = file.name.toLowerCase();
     const isJpg = file.type === "image/jpeg" || lower.endsWith(".jpg") || lower.endsWith(".jpeg");
     if (!isJpg) {
       return NextResponse.json({ error: "Only JPG allowed" }, { status: 400 });
     }
-    if (file.size > 2 * 1024 * 1024) {
-      return NextResponse.json({ error: "Over 2MB" }, { status: 400 });
-    }
-    const idx = file.name.lastIndexOf("_");
-    const baseSku = idx === -1 ? "" : file.name.slice(0, idx).trim();
-    if (!baseSku || baseSku !== sku) {
-      return NextResponse.json({ error: "Name must match SKU_*.jpg" }, { status: 400 });
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: "Over 5MB" }, { status: 400 });
     }
 
-    const { viewTable } = getTablesForBrand(brand);
-    const checkParams = new URLSearchParams();
-    checkParams.set("select", SKU_COLUMN);
-    checkParams.set(SKU_COLUMN, `eq.${sku}`);
-    checkParams.set("limit", "1");
-    const { data: checkRows } = await supabaseRestGet(viewTable, checkParams);
-    if (!Array.isArray(checkRows) || checkRows.length === 0) {
-      return NextResponse.json({ error: `SKU not found (${sku})` }, { status: 404 });
+    // Validate SKU exists in sku_pricing
+    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: skuRows } = await sb
+      .schema("core")
+      .from("sku_pricing")
+      .select("variation_sku")
+      .eq("variation_sku", sku)
+      .limit(1);
+
+    if (!skuRows || skuRows.length === 0) {
+      return NextResponse.json({ error: `VARIATION_SKU not found: ${sku}` }, { status: 404 });
     }
 
-    const path = `${brand}/${sku}/${file.name}`;
-    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        "Content-Type": file.type || "image/jpeg",
-        "x-upsert": "true",
-      },
-      body: file,
-    });
+    // Upload to Cloudflare R2 (main-images folder)
+    const key = mainImageKey(brand, sku, file.name);
+    const r2 = getR2Client();
+    const buffer = Buffer.from(await file.arrayBuffer());
 
-    if (!uploadRes.ok) {
-      const body = await uploadRes.text().catch(() => "");
-      return NextResponse.json({ error: body || uploadRes.statusText }, { status: 400 });
-    }
+    await r2.send(new PutObjectCommand({
+      Bucket: R2_MAIN_IMAGES_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: file.type || "image/jpeg",
+    }));
 
-    await callUpdateProductImages({
-      variationSku: sku,
-      bucket: BUCKET,
-      path,
-      brand,
-    });
+    // Store reference in sku_pricing.product_images (or a dedicated column)
+    // Update all items under this variation_sku
+    const imageUrl = `r2://${R2_MAIN_IMAGES_BUCKET}/${key}`;
 
-    return NextResponse.json({ ok: true, path });
+    return NextResponse.json({ ok: true, key, imageUrl, bucket: R2_MAIN_IMAGES_BUCKET });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 400 });

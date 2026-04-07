@@ -7,6 +7,18 @@ const SECRET_KEY  = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || "";
 
 export const R2_RAW_BUCKET = process.env.R2_RAW_BUCKET || "dam-raw-assets";
 export const R2_WEB_BUCKET = process.env.R2_WEB_BUCKET || "dam-web-assets";
+export const R2_MAIN_IMAGES_BUCKET = process.env.R2_MAIN_IMAGES_BUCKET || "dam-web-assets";
+export const R2_MAIN_IMAGES_PREFIX = "main-images"; // folder inside bucket
+
+/** Build R2 key for main product image (e-commerce). */
+export function mainImageKey(brand: string, sku: string, filename: string): string {
+  return `${R2_MAIN_IMAGES_PREFIX}/${brand.toUpperCase()}/${sku}/${filename}`;
+}
+
+/** Get public URL for main image (if bucket has public access, otherwise use presigned). */
+export async function getMainImageUrl(brand: string, sku: string, filename: string): Promise<string> {
+  return getDownloadPresignedUrl(R2_MAIN_IMAGES_BUCKET, mainImageKey(brand, sku, filename), undefined, 86400); // 24h
+}
 
 export function getR2Client(): S3Client {
   if (!ACCOUNT_ID || !ACCESS_KEY || !SECRET_KEY) {

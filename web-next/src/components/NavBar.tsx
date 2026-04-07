@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 // ─── Inline SVG Icons (stroke-based, 20×20) ────────────────────────────────
 
@@ -213,11 +213,15 @@ export default function NavBar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => {
+  const checkAuth = useCallback(() => {
     fetch("/api/session", { cache: "no-store" })
       .then(r => r.json())
-      .then(d => setAuth(Boolean(d?.authenticated)));
-  }, [pathname]);
+      .then(d => setAuth(Boolean(d?.authenticated)))
+      .catch(() => setAuth(false));
+  }, []);
+
+  useEffect(() => { checkAuth(); }, [checkAuth]);
+  useEffect(() => { if (auth === false) checkAuth(); }, [pathname, auth, checkAuth]);
 
   if (!auth || pathname === "/login" || pathname.startsWith("/returns")) return null;
 

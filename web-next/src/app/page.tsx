@@ -305,27 +305,35 @@ export default function Home() {
     setMasterUploading(false);
   };
 
-  const buildImageMap = (data: Row[], cacheVersion: number) => {
+  const buildImageMap = async (data: Row[]) => {
     const map = new Map<string, ImageRef[]>();
+    // Get unique VARIATION_SKUs + brands
+    const skuBrands = new Map<string, string>();
     for (const row of data) {
       const sku = row[VARIATION_COLUMN];
-      if (!sku) continue;
-      const imgs = row.product_images;
-      if (Array.isArray(imgs)) {
-        map.set(
-          String(sku),
-          imgs.map((url: string) => {
-            const cleanUrl = String(url).split("?")[0];
-            return {
-              name: cleanUrl.split("/").pop() || cleanUrl,
-              url: withCacheBuster(String(url), cacheVersion),
-            };
-          })
-        );
-      } else {
-        map.set(String(sku), []);
+      if (sku && !skuBrands.has(String(sku))) {
+        skuBrands.set(String(sku), String(row.BRAND || ""));
       }
     }
+    // Fetch main images from R2 for each unique variation
+    await Promise.all(
+      [...skuBrands.entries()].map(async ([sku, brand]) => {
+        try {
+          const res = await fetch(`/api/main-images?sku=${encodeURIComponent(sku)}&brand=${encodeURIComponent(brand)}`);
+          const json = await res.json();
+          if (json.images?.length > 0) {
+            map.set(sku, json.images.map((img: any) => ({
+              name: img.filename,
+              url: img.url,
+            })));
+          } else {
+            map.set(sku, []);
+          }
+        } catch {
+          map.set(sku, []);
+        }
+      })
+    );
     return map;
   };
 
@@ -369,7 +377,7 @@ export default function Home() {
         return;
       }
 
-      const map = buildImageMap(dataRows, Date.now());
+      const map = await buildImageMap(dataRows);
       setRows(dataRows);
       setImageMap(map);
       setSearchStatus(`${total || 0} total, ${shown} shown.`);
