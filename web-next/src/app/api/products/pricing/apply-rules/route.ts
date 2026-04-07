@@ -6,6 +6,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, requireServerConfig } from "@/lib/server-supabase";
 
 type PricingRule = {
+  id?: number;
   brand: string;
   parents_sku: string | null;
   category: string | null;
@@ -116,8 +117,8 @@ export async function POST(req: Request) {
       .schema("core")
       .from("pricing_rules")
       .select("*");
-    if (brand) {
-      rulesQuery = rulesQuery.eq("brand", brand);
+    if (brandFilter) {
+      rulesQuery = rulesQuery.in("brand", brandFilter);
     }
     const { data: rulesData, error: rulesError } = await rulesQuery;
     if (rulesError) {
@@ -276,12 +277,53 @@ export async function POST(req: Request) {
         .insert(batch);
     }
 
+    // 7. Update pct_est_margin in pricing_rules based on calculated margins
+    // Average margin per variation_sku → update matching rule
+    // Build variation_sku → margin map from original SKU data
+    const varMargins = new Map<string, number[]>();
+    for (const u of updates) {
+      // Find original SKU to get variation_sku
+      const orig = skus.find((s) => s.item_sku === u.item_sku);
+      const varSku = (orig as any)?.variation_sku || "";
+      const m = u.est_margin as number | null;
+      if (varSku && m != null) {
+        if (!varMargins.has(varSku)) varMargins.set(varSku, []);
+        varMargins.get(varSku)!.push(m);
+      }
+    }
+
+    for (const rule of rules) {
+      const varSku = (rule as any).variation_sku;
+      const margins = varMargins.get(varSku);
+      if (margins && margins.length > 0) {
+        const avgMargin = margins.reduce((a, b) => a + b, 0) / margins.length;
+        // Store as decimal (e.g., 0.207 = 20.7%) for consistency with other pct_ fields
+        const pctMargin = Math.round(avgMargin * 1000) / 100000; // e.g., 20.7% → 0.207, -0.6% → -0.006
+        await supabase.schema("core").from("pricing_rules")
+          .update({ pct_est_margin: pctMargin })
+          .eq("id", rule.id);
+      }
+    }
+
+    // 8. Push updated prices to Google Sheet (fire-and-forget)
+    try {
+      const baseUrl = req.headers.get("origin") || req.headers.get("host") || "";
+      const proto = baseUrl.startsWith("http") ? "" : "http://";
+      const cookie = req.headers.get("cookie") || "";
+      fetch(`${proto}${baseUrl}/api/master-data/write-gsheet`, {
+        method: "POST",
+        headers: { cookie },
+        keepalive: true,
+      }).catch(() => {}); // fire-and-forget
+    } catch { /* ignore */ }
+
     return NextResponse.json({
       ok: true,
       updated: updatedCount,
       totalSkus: skus.length,
       rulesApplied: rules.length,
       historyEntries: historyRows.length,
+      pushedToSheet: true,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

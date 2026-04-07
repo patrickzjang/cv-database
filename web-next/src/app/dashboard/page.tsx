@@ -233,13 +233,13 @@ function MultiSelectFilter({
         {open && (
           <div style={{
             position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: "100%",
-            background: "#0f1b38", border: "1px solid #2f3f6d", borderRadius: 10,
-            boxShadow: "0 10px 28px rgba(0,0,0,0.35)", zIndex: 20, padding: 6,
+            background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 10,
+            boxShadow: "0 10px 28px rgba(0,0,0,0.12)", zIndex: 100, padding: 6,
           }}>
             <button
               className="ghost"
               style={{ width: "100%", textAlign: "left", marginBottom: 4,
-                background: allSelected ? "#1e2f66" : "transparent",
+                background: allSelected ? "var(--accent-soft)" : "transparent",
                 borderColor: allSelected ? "#2c3f7a" : "transparent",
                 color: allSelected ? "#fff" : "var(--text-muted)" }}
               onClick={() => { onChange([]); setOpen(false); }}
@@ -252,7 +252,7 @@ function MultiSelectFilter({
                 <button key={code}
                   className="ghost"
                   style={{ width: "100%", textAlign: "left",
-                    background: active ? "#1e2f66" : "transparent",
+                    background: active ? "var(--accent-soft)" : "transparent",
                     borderColor: active ? "#2c3f7a" : "transparent",
                     color: active ? "#fff" : "var(--text)",
                     display: "flex", alignItems: "center", gap: 8 }}
@@ -393,14 +393,14 @@ export default function DashboardPage() {
                 <div>
                   <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 4 }}>FROM</div>
                   <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #33406b",
-                      background: "#0d1730", color: "var(--text)", fontSize: "0.9rem" }} />
+                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid var(--border-2)",
+                      background: "var(--surface-2)", color: "var(--text)", fontSize: "0.9rem" }} />
                 </div>
                 <div>
                   <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 4 }}>TO</div>
                   <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #33406b",
-                      background: "#0d1730", color: "var(--text)", fontSize: "0.9rem" }} />
+                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid var(--border-2)",
+                      background: "var(--surface-2)", color: "var(--text)", fontSize: "0.9rem" }} />
                 </div>
                 <button className="primary" onClick={fetchDashboard}
                   disabled={!dateFrom || !dateTo || loading}
@@ -432,7 +432,7 @@ export default function DashboardPage() {
 
         {/* ── Error ── */}
         {error && (
-          <div style={{ background: "#2a0f0f", border: "1px solid #ff6b6b", borderRadius: 12,
+          <div style={{ background: "rgba(220,38,38,0.06)", border: "1px solid #ff6b6b", borderRadius: 12,
             padding: "12px 16px", color: "#ff6b6b", marginBottom: 16 }}>
             ⚠ {error}
           </div>
@@ -553,7 +553,7 @@ export default function DashboardPage() {
                               <td style={{ textAlign: "right", fontWeight: 700, color: "#00c853" }}>{fmt(row.net_revenue)}</td>
                               <td style={{ textAlign: "right" }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                                  <div style={{ width: 60, height: 6, borderRadius: 999, background: "#0d1730", overflow: "hidden" }}>
+                                  <div style={{ width: 60, height: 6, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
                                     <div style={{ height: "100%", borderRadius: 999, width: `${pct}%`, background: "linear-gradient(90deg, #3d5afe, #8ea1ff)", transition: "width 0.4s ease" }} />
                                   </div>
                                   <span style={{ minWidth: 40 }}>{pct.toFixed(1)}%</span>
@@ -581,7 +581,7 @@ export default function DashboardPage() {
                   value={skuSearch}
                   onChange={(e) => setSkuSearch(e.target.value)}
                   style={{
-                    background: "#0d1730", border: "1px solid #2f3f6d", borderRadius: 8,
+                    background: "var(--surface-2)", border: "1px solid var(--border-2)", borderRadius: 8,
                     color: "var(--text)", padding: "6px 12px", fontSize: "0.85rem", width: 200,
                     outline: "none",
                   }}
@@ -627,7 +627,7 @@ export default function DashboardPage() {
                               <td style={{ textAlign: "right", fontWeight: 700 }}>{fmtInt(row.total_qty)}</td>
                               <td style={{ textAlign: "right" }}>{fmt(row.total_revenue)}</td>
                               <td>
-                                <div style={{ height: 8, borderRadius: 999, background: "#0d1730", overflow: "hidden" }}>
+                                <div style={{ height: 8, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
                                   <div style={{
                                     height: "100%", borderRadius: 999, width: `${pct}%`,
                                     background: "linear-gradient(90deg, #3d5afe, #8ea1ff)",

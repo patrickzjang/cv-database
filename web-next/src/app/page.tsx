@@ -19,7 +19,7 @@ type FileItem = {
   uploaded: boolean;
 };
 
-type ImageRef = { name: string; url: string };
+type ImageRef = { name: string; url: string; key?: string };
 
 type Row = Record<string, any>;
 const HIDDEN_SEARCH_COLUMNS = new Set(["MONTH"]);
@@ -305,13 +305,42 @@ export default function Home() {
     setMasterUploading(false);
   };
 
-  // Load images on-demand when user clicks "View Images" — not during search
+  // Load images in one batch request after search
+  const loadImagesForSkus = async (data: Row[]): Promise<Map<string, ImageRef[]>> => {
+    const map = new Map<string, ImageRef[]>();
+    const skuBrands: { sku: string; brand: string }[] = [];
+    const seen = new Set<string>();
+    for (const row of data) {
+      const sku = String(row[VARIATION_COLUMN] || "");
+      if (sku && !seen.has(sku)) {
+        seen.add(sku);
+        skuBrands.push({ sku, brand: String(row.BRAND || "") });
+      }
+    }
+    if (skuBrands.length === 0) return map;
+
+    try {
+      const res = await fetch("/api/main-images/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skus: skuBrands }),
+      });
+      const json = await res.json();
+      const images = json.images ?? {};
+      for (const [sku, imgs] of Object.entries(images)) {
+        map.set(sku, (imgs as any[]).map((img: any) => ({ name: img.filename, url: img.url, key: img.key })));
+      }
+    } catch { /* ignore */ }
+    return map;
+  };
+
+  // Load single SKU images (for modal click)
   const loadImagesForSku = async (sku: string, brand: string): Promise<ImageRef[]> => {
     try {
       const res = await fetch(`/api/main-images?sku=${encodeURIComponent(sku)}&brand=${encodeURIComponent(brand)}`);
       const json = await res.json();
       if (json.images?.length > 0) {
-        return json.images.map((img: any) => ({ name: img.filename, url: img.url }));
+        return json.images.map((img: any) => ({ name: img.filename, url: img.url, key: img.key }));
       }
     } catch { /* ignore */ }
     return [];
@@ -358,7 +387,10 @@ export default function Home() {
       }
 
       setRows(dataRows);
-      setImageMap(new Map()); // Images load on-demand when clicked
+      setImageMap(new Map()); // Show results immediately
+
+      // Load images in background (single batch request)
+      loadImagesForSkus(dataRows).then((map) => setImageMap(map));
       setSearchStatus(`${total || 0} total, ${shown} shown.`);
       setPageCount(nextPageCount);
     } catch (err: any) {
@@ -397,30 +429,31 @@ export default function Home() {
     setImageMap((prev) => new Map(prev).set(variation, images));
   };
 
-  const downloadUrl = async (url: string, filename: string) => {
-    const safeName = filename || "image.jpg";
-    const trigger = (href: string) => {
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = safeName;
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-      a.remove();
-    };
+  const downloadUrl = async (url: string, _filename: string) => {
+    // R2 presigned URLs work directly in browser
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
+  const deleteImage = async (key: string, variation: string) => {
+    if (!confirm(`Delete this image?\n${key.split("/").pop()}`)) return;
     try {
-      const res = await fetch(url, { mode: "cors", credentials: "omit", cache: "no-store" });
-      if (!res.ok) {
-        throw new Error(res.statusText || "Download request failed");
+      const res = await fetch(`/api/main-images?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (res.ok) {
+        // Remove from modal and cache
+        setModalImages((prev) => prev.filter((img) => !(img as any).key || (img as any).key !== key));
+        setImageMap((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(variation) ?? [];
+          next.set(variation, existing.filter((img) => !(img as any).key || (img as any).key !== key));
+          return next;
+        });
+        // Reload images for this SKU
+        const brand = rows.find((r) => String(r[VARIATION_COLUMN]) === variation)?.BRAND || currentBrand;
+        const fresh = await loadImagesForSku(variation, String(brand));
+        setModalImages(fresh);
+        setImageMap((prev) => new Map(prev).set(variation, fresh));
       }
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      trigger(objectUrl);
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
-    } catch {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
+    } catch { /* ignore */ }
   };
 
   const downloadAll = async (images: ImageRef[]) => {
@@ -873,11 +906,25 @@ export default function Home() {
                 <button className="ghost" onClick={() => downloadAll(modalImages)}>Download all images</button>
               </div>
               <div className="thumb-grid">
+                {modalImages.length === 0 && (
+                  <div style={{ color: "var(--text-muted)", padding: 20, textAlign: "center" }}>Loading images...</div>
+                )}
                 {modalImages.map((img) => (
-                  <div className="thumb-card" key={img.url}>
+                  <div className="thumb-card" key={img.url} style={{ position: "relative" }}>
                     <img src={img.url} alt={img.name} className="thumb" />
                     <div>{img.name}</div>
-                    <button className="ghost" onClick={() => downloadUrl(img.url, img.name)}>Download</button>
+                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      <button className="ghost" onClick={() => downloadUrl(img.url, img.name)} style={{ fontSize: "0.82rem" }}>Download</button>
+                      {img.key && (
+                        <button
+                          className="ghost"
+                          onClick={() => deleteImage(img.key!, modalTitle.replace("Images for ", ""))}
+                          style={{ fontSize: "0.82rem", color: "var(--error)" }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

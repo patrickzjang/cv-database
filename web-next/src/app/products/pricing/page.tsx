@@ -76,22 +76,23 @@ function fmtPct(n: number | null | undefined): string {
 }
 
 // Margin stored as decimal (0.225 = 22.5%)
-function marginPct(margin: number | null | undefined): number | null {
+function marginPct(margin: number | null | undefined, isDecimal = false): number | null {
   if (margin == null || isNaN(margin)) return null;
-  // Auto-detect: if < 1 it's decimal, otherwise already %
-  return margin < 1 ? margin * 100 : margin;
+  // isDecimal=true: value is like 0.207 (=20.7%) — used for pct_est_margin in rules
+  // isDecimal=false: value is already % like 20.7 or -0.6 — used for est_margin in grid
+  return isDecimal ? margin * 100 : margin;
 }
 
-function marginColor(margin: number | null | undefined): string {
-  const pct = marginPct(margin);
+function marginColor(margin: number | null | undefined, isDecimal = false): string {
+  const pct = marginPct(margin, isDecimal);
   if (pct == null) return "transparent";
   if (pct < 10) return "rgba(220, 38, 38, 0.12)";
   if (pct < 20) return "rgba(217, 119, 6, 0.12)";
   return "rgba(5, 150, 105, 0.12)";
 }
 
-function marginTextColor(margin: number | null | undefined): string {
-  const pct = marginPct(margin);
+function marginTextColor(margin: number | null | undefined, isDecimal = false): string {
+  const pct = marginPct(margin, isDecimal);
   if (pct == null) return "var(--text-muted)";
   if (pct < 10) return "var(--error)";
   if (pct < 20) return "var(--warn)";
@@ -351,39 +352,59 @@ function DragHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => voi
 
 type DragFillState = {
   active: boolean;
-  sourceRow: number;  // index in groupedGrid
-  sourceCol: string;  // field name
+  sourceRow: number;
+  sourceCol: string;
   sourceValue: number | string | null;
-  targetRow: number;  // current hover row
+  targetRow: number;
+  targetCol: string;
 };
 
 function useDragFill(
-  onApply: (col: string, value: number | string | null, fromRow: number, toRow: number) => void,
+  columns: string[],
+  onApplyVertical: (col: string, value: number | string | null, fromRow: number, toRow: number) => void,
+  onApplyHorizontal: (row: number, value: number | string | null, fromCol: string, toCol: string) => void,
 ) {
   const [drag, setDrag] = useState<DragFillState>({
-    active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1,
+    active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1, targetCol: "",
   });
 
   function startDrag(row: number, col: string, value: number | string | null) {
-    setDrag({ active: true, sourceRow: row, sourceCol: col, sourceValue: value, targetRow: row });
+    setDrag({ active: true, sourceRow: row, sourceCol: col, sourceValue: value, targetRow: row, targetCol: col });
     const handleMove = (e: MouseEvent) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
+      const td = el?.closest("td");
       const tr = el?.closest("tr");
       if (tr) {
         const idx = Number(tr.dataset.rowIdx);
         if (!isNaN(idx)) {
-          setDrag((prev) => ({ ...prev, targetRow: idx }));
+          // Detect column from td data attribute
+          const colName = td?.getAttribute("data-col") || "";
+          setDrag((prev) => ({ ...prev, targetRow: idx, targetCol: colName || prev.targetCol }));
         }
       }
     };
     const handleUp = () => {
       setDrag((prev) => {
-        if (prev.active && prev.targetRow !== prev.sourceRow) {
+        if (!prev.active) return { active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1, targetCol: "" };
+
+        const rowDiff = Math.abs(prev.targetRow - prev.sourceRow);
+        const srcColIdx = columns.indexOf(prev.sourceCol);
+        const tgtColIdx = columns.indexOf(prev.targetCol);
+        const colDiff = Math.abs(tgtColIdx - srcColIdx);
+
+        if (rowDiff > 0 && rowDiff >= colDiff) {
+          // Vertical fill
           const from = Math.min(prev.sourceRow, prev.targetRow);
           const to = Math.max(prev.sourceRow, prev.targetRow);
-          onApply(prev.sourceCol, prev.sourceValue, from, to);
+          onApplyVertical(prev.sourceCol, prev.sourceValue, from, to);
+        } else if (colDiff > 0) {
+          // Horizontal fill
+          const fromIdx = Math.min(srcColIdx, tgtColIdx);
+          const toIdx = Math.max(srcColIdx, tgtColIdx);
+          onApplyHorizontal(prev.sourceRow, prev.sourceValue, columns[fromIdx], columns[toIdx]);
         }
-        return { active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1 };
+
+        return { active: false, sourceRow: -1, sourceCol: "", sourceValue: null, targetRow: -1, targetCol: "" };
       });
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
@@ -393,10 +414,26 @@ function useDragFill(
   }
 
   function isHighlighted(row: number, col: string): boolean {
-    if (!drag.active || col !== drag.sourceCol) return false;
-    const from = Math.min(drag.sourceRow, drag.targetRow);
-    const to = Math.max(drag.sourceRow, drag.targetRow);
-    return row >= from && row <= to;
+    if (!drag.active) return false;
+    const srcColIdx = columns.indexOf(drag.sourceCol);
+    const tgtColIdx = columns.indexOf(drag.targetCol);
+    const colIdx = columns.indexOf(col);
+    const fromRow = Math.min(drag.sourceRow, drag.targetRow);
+    const toRow = Math.max(drag.sourceRow, drag.targetRow);
+    const fromCol = Math.min(srcColIdx, tgtColIdx);
+    const toCol = Math.max(srcColIdx, tgtColIdx);
+
+    const rowDiff = Math.abs(drag.targetRow - drag.sourceRow);
+    const colDiffAbs = Math.abs(tgtColIdx - srcColIdx);
+
+    if (rowDiff > 0 && rowDiff >= colDiffAbs) {
+      // Vertical: same col, range of rows
+      return col === drag.sourceCol && row >= fromRow && row <= toRow;
+    } else if (colDiffAbs > 0) {
+      // Horizontal: same row, range of cols
+      return row === drag.sourceRow && colIdx >= fromCol && colIdx <= toCol;
+    }
+    return false;
   }
 
   return { drag, startDrag, isHighlighted };
@@ -420,25 +457,43 @@ export default function PricingPage() {
   const gridFileRef = useRef<HTMLInputElement>(null);
 
   // ── Drag fill ──
-  const { drag: gridDrag, startDrag: gridStartDrag, isHighlighted: gridIsHighlighted } = useDragFill(
+  const GRID_DRAG_COLS = ["rrp", "rsp", "price_campaign_a", "price_mega", "price_flash_sale", "min_price"];
+  const { startDrag: gridStartDrag, isHighlighted: gridIsHighlighted } = useDragFill(
+    GRID_DRAG_COLS,
     (col, value, fromRow, toRow) => {
-      // Apply value to all rows in range
       const affected = groupedGrid.slice(fromRow, toRow + 1);
       for (const group of affected) {
         savePricingCell(group.rows[0], col, String(value ?? ""));
       }
       setToast({ message: `Filled ${affected.length} rows`, type: "ok" });
     },
+    (_row, _value, _fromCol, _toCol) => { /* grid is read-only, no horizontal fill */ },
   );
 
   // ── Drag fill for rules ──
+  const RULES_DRAG_COLS = ["pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"];
   const { startDrag: rulesStartDrag, isHighlighted: rulesIsHighlighted } = useDragFill(
+    RULES_DRAG_COLS,
+    // Vertical fill
     (col, value, fromRow, toRow) => {
       const affected = rulesData.slice(fromRow, toRow + 1);
       for (const rule of affected) {
         saveRuleCell(rule, col, String(value ?? ""));
       }
       setToast({ message: `Filled ${affected.length} rules`, type: "ok" });
+    },
+    // Horizontal fill — copy value across columns in same row
+    (row, value, fromCol, toCol) => {
+      const rule = rulesData[row];
+      if (!rule) return;
+      const fromIdx = RULES_DRAG_COLS.indexOf(fromCol);
+      const toIdx = RULES_DRAG_COLS.indexOf(toCol);
+      if (fromIdx < 0 || toIdx < 0) return;
+      const cols = RULES_DRAG_COLS.slice(Math.min(fromIdx, toIdx), Math.max(fromIdx, toIdx) + 1);
+      for (const col of cols) {
+        saveRuleCell(rule, col, String(value ?? ""));
+      }
+      setToast({ message: `Filled ${cols.length} columns`, type: "ok" });
     },
   );
 
@@ -675,24 +730,42 @@ export default function PricingPage() {
 
   async function applyRules() {
     setApplyLoading(true);
+    setConfirmApply(false);
+    setSyncProgress({ active: true, pct: 5, label: "Applying pricing rules..." });
+
+    let pct = 5;
+    const timer = setInterval(() => {
+      pct = Math.min(pct + Math.random() * 5 + 2, 85);
+      setSyncProgress((p) => p.active && p.pct < 100 ? { ...p, pct: Math.round(pct), label: pct < 30 ? "Loading rules..." : pct < 60 ? "Calculating prices..." : "Updating database..." } : p);
+    }, 600);
+
     try {
       const res = await fetch("/api/products/pricing/apply-rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ brand: rulesBrand !== "ALL" ? rulesBrand : undefined }),
       });
+      clearInterval(timer);
       const json = await res.json();
+
       if (res.ok) {
-        setToast({ message: `Rules applied to ${json.updated ?? 0} SKUs`, type: "ok" });
+        setSyncProgress({ active: true, pct: 95, label: "Pushing to Google Sheet..." });
+        await new Promise((r) => setTimeout(r, 1000));
+        setSyncProgress({ active: true, pct: 100, label: `Done! ${(json.updated ?? 0).toLocaleString()} SKUs updated` });
+        setToast({ message: `Rules applied to ${(json.updated ?? 0).toLocaleString()} SKUs + pushed to Sheet`, type: "ok" });
         fetchGrid();
+        fetchRules();
       } else {
+        setSyncProgress({ active: true, pct: 100, label: "Failed" });
         setToast({ message: json.error ?? "Apply failed", type: "error" });
       }
     } catch {
+      clearInterval(timer);
+      setSyncProgress({ active: true, pct: 100, label: "Failed" });
       setToast({ message: "Apply failed", type: "error" });
     } finally {
+      setTimeout(() => setSyncProgress({ active: false, pct: 0, label: "" }), 3000);
       setApplyLoading(false);
-      setConfirmApply(false);
     }
   }
 
@@ -718,18 +791,45 @@ export default function PricingPage() {
   // ── Export CSV ─────────────────────────────────────────────────────────────
 
   function buildCsv(data: SkuPricing[]): string {
+    // Build platform mapping lookup
+    const mpMap = new Map<string, Record<string, PlatformMapping>>();
+    for (const m of mappingData ?? []) {
+      if (!mpMap.has(m.item_sku)) mpMap.set(m.item_sku, {});
+      mpMap.get(m.item_sku)![m.platform] = m;
+    }
+
     const headers = [
       "ITEM_SKU", "VARIATION_SKU", "Description", "Brand", "RRP", "RSP",
       "Campaign A", "Mega", "Flash Sale", "Min Price", "COGS", "Margin%",
+      "Shopee Product ID", "Shopee Option ID",
+      "Lazada Product ID", "Lazada Shop SKU",
+      "TikTok Product ID", "TikTok SKU ID",
+      "Shopify Product ID", "Shopify SKU ID",
     ];
-    const rows = data.map((r) => [
-      r.item_sku, r.variation_sku, r.description ?? "", r.brand,
-      r.rrp ?? "", r.rsp ?? "", r.price_campaign_a ?? "", r.price_mega ?? "",
-      r.price_flash_sale ?? "", r.min_price ?? "", r.cogs_inc_vat ?? "",
-      marginPct(r.est_margin) != null ? marginPct(r.est_margin)!.toFixed(1) : "",
-    ]);
+    const rows = data.map((r) => {
+      const mp = mpMap.get(r.item_sku) ?? {};
+      return [
+        r.item_sku, r.variation_sku, r.description ?? "", r.brand,
+        r.rrp ?? "", r.rsp ?? "", r.price_campaign_a ?? "", r.price_mega ?? "",
+        r.price_flash_sale ?? "", r.min_price ?? "", r.cogs_inc_vat ?? "",
+        marginPct(r.est_margin) != null ? marginPct(r.est_margin)!.toFixed(1) : "",
+        mp.shopee?.platform_product_id ?? "", mp.shopee?.platform_option_id ?? "",
+        mp.lazada?.platform_product_id ?? "", mp.lazada?.platform_option_id ?? "",
+        mp.tiktok?.platform_product_id ?? "", mp.tiktok?.platform_option_id ?? "",
+        mp.shopify?.platform_product_id ?? "", mp.shopify?.platform_option_id ?? mp.shopify?.platform_sku ?? "",
+      ];
+    });
+    // Platform ID columns (index 12+) — prefix with tab to force Excel text format
+    const platformStartIdx = 12;
     return [headers, ...rows].map((row) =>
-      row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")
+      row.map((c, idx) => {
+        const s = String(c).replace(/"/g, '""');
+        // Force text format for platform IDs (long numbers) to prevent Excel scientific notation
+        if (idx >= platformStartIdx && s && /^\d{6,}$/.test(s)) {
+          return `"\t${s}"`;
+        }
+        return `"${s}"`;
+      }).join(",")
     ).join("\n");
   }
 
@@ -1182,7 +1282,7 @@ export default function PricingPage() {
             </div>
 
             {/* Rules table */}
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="card" style={{ padding: 0 }}>
               {rulesLoading ? (
                 <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
                   Loading rules...
@@ -1193,20 +1293,20 @@ export default function PricingPage() {
                 </div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
-                  <table className="results-table" style={{ width: "100%", tableLayout: "auto" }}>
+                  <table className="results-table" style={{ width: "100%", tableLayout: "fixed" }}>
                     <thead>
                       <tr>
-                        <th style={{ width: 150 }}>Variation SKU</th>
-                        <th style={{ minWidth: 140 }}>Description</th>
-                        <th style={{ width: 60 }}>Brand</th>
-                        <th style={{ width: 110 }}>Group</th>
-                        <th style={{ width: 100 }}>Category</th>
-                        <th style={{ width: 100 }}>Sub-Category</th>
-                        <th style={{ width: 75, textAlign: "right" }}>%RSP</th>
-                        <th style={{ width: 75, textAlign: "right" }}>%A</th>
-                        <th style={{ width: 75, textAlign: "right" }}>%Mega</th>
-                        <th style={{ width: 75, textAlign: "right" }}>%FS</th>
-                        <th style={{ width: 80, textAlign: "right" }}>%Margin</th>
+                        <th style={{ width: "12%" }}>Variation SKU</th>
+                        <th style={{ width: "18%" }}>Description</th>
+                        <th style={{ width: "5%" }}>Brand</th>
+                        <th style={{ width: "7%" }}>Group</th>
+                        <th style={{ width: "9%" }}>Category</th>
+                        <th style={{ width: "9%" }}>Sub-Cat</th>
+                        <th style={{ width: "7%", textAlign: "right" }}>%RSP</th>
+                        <th style={{ width: "7%", textAlign: "right" }}>%A</th>
+                        <th style={{ width: "7%", textAlign: "right" }}>%Mega</th>
+                        <th style={{ width: "7%", textAlign: "right" }}>%FS</th>
+                        <th style={{ width: "8%", textAlign: "right" }}>%Margin</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1233,7 +1333,7 @@ export default function PricingPage() {
                             <EditableCell value={rule.sub_category} format="text" onSave={(v) => saveRuleCell(rule, "sub_category", v)} />
                           </td>
                           {(["pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"] as const).map((col) => (
-                            <td key={col} style={{
+                            <td key={col} data-col={col} style={{
                               textAlign: "right", position: "relative",
                               background: rulesIsHighlighted(i, col) ? "rgba(30,64,175,0.10)" : undefined,
                             }} className="drag-fill-cell">
@@ -1248,11 +1348,11 @@ export default function PricingPage() {
                           <td
                             style={{
                               textAlign: "right",
-                              color: marginTextColor(rule.pct_est_margin),
+                              color: marginTextColor(rule.pct_est_margin, true),
                               fontWeight: 600,
                             }}
                           >
-                            {rule.pct_est_margin != null ? `${(rule.pct_est_margin * 100).toFixed(1)}%` : "–"}
+                            {marginPct(rule.pct_est_margin, true) != null ? `${marginPct(rule.pct_est_margin, true)!.toFixed(1)}%` : "–"}
                           </td>
                         </tr>
                       ))}
@@ -1272,18 +1372,19 @@ export default function PricingPage() {
               )}
             </div>
 
-            {/* Apply rules confirmation */}
-            <ConfirmDialog
-              open={confirmApply}
-              title="Apply Pricing Rules"
-              message={`This will recalculate RSP, Campaign A, Mega, and Flash Sale prices for ${
-                rulesBrand !== "ALL" ? `all ${rulesBrand}` : "all"
-              } SKUs based on the current rules. Continue?`}
-              onConfirm={applyRules}
-              onCancel={() => setConfirmApply(false)}
-            />
           </div>
         )}
+
+        {/* Apply rules confirmation — outside tab content to avoid overflow:hidden */}
+        <ConfirmDialog
+          open={confirmApply}
+          title="Apply Pricing Rules"
+          message={`This will recalculate RSP, Campaign A, Mega, and Flash Sale prices for ${
+            rulesBrand !== "ALL" ? `all ${rulesBrand}` : "all"
+          } SKUs based on the current rules. Continue?`}
+          onConfirm={applyRules}
+          onCancel={() => setConfirmApply(false)}
+        />
 
         {/* ════════════════════════════════════════════════════════════════════
             TAB 3: PLATFORM MAPPING

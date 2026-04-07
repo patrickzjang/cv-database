@@ -10,9 +10,18 @@ export const R2_WEB_BUCKET = process.env.R2_WEB_BUCKET || "dam-web-assets";
 export const R2_MAIN_IMAGES_BUCKET = process.env.R2_MAIN_IMAGES_BUCKET || "dam-web-assets";
 export const R2_MAIN_IMAGES_PREFIX = "main-images"; // folder inside bucket
 
+// Map brand codes to folder names for main images
+const BRAND_FOLDER: Record<string, string> = {
+  PN: "PAN", JN: "PAN", PAN: "PAN",
+  DB: "DAYBREAK", DAYBREAK: "DAYBREAK",
+  HC: "HEELCARE", HEELCARE: "HEELCARE",
+  AN: "ARENA", ARENA: "ARENA",
+};
+
 /** Build R2 key for main product image (e-commerce). */
 export function mainImageKey(brand: string, sku: string, filename: string): string {
-  return `${R2_MAIN_IMAGES_PREFIX}/${brand.toUpperCase()}/${sku}/${filename}`;
+  const folder = BRAND_FOLDER[brand.toUpperCase()] ?? brand.toUpperCase();
+  return `${R2_MAIN_IMAGES_PREFIX}/${folder}/${sku}/${filename}`;
 }
 
 /** Get public URL for main image (if bucket has public access, otherwise use presigned). */
