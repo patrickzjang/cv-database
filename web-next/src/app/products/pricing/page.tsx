@@ -551,8 +551,10 @@ export default function PricingPage() {
   const [mappingData, setMappingData] = useState<PlatformMapping[]>([]);
   const [mappingBrand, setMappingBrand] = useState("PAN");
   const [mappingPlatform, setMappingPlatform] = useState("ALL");
-  const [mappingStatus, setMappingStatus] = useState("all");
+  const [mappingStatus, setMappingStatus] = useState("all"); // all | full | incomplete | missing
+
   const [mappingLoading, setMappingLoading] = useState(false);
+  const [allVariations, setAllVariations] = useState<{ variation_sku: string; brand: string }[]>([]);
   const mappingFileRef = useRef<HTMLInputElement>(null);
   const [mappingStats, setMappingStats] = useState<Record<string, number>>({});
 
@@ -615,8 +617,7 @@ export default function PricingPage() {
       while (true) {
         const params = new URLSearchParams();
         if (mappingBrand !== "ALL") params.set("brand", mappingBrand);
-        if (mappingPlatform !== "ALL") params.set("platform", mappingPlatform);
-        if (mappingStatus !== "all") params.set("listing_status", mappingStatus);
+        // Don't filter by status/platform at API level — filter in UI after grouping by variation
         params.set("page", String(page));
         params.set("pageSize", "500");
         const res = await fetch(`/api/products/platform-mapping?${params}`);
@@ -628,12 +629,33 @@ export default function PricingPage() {
         page++;
       }
       setMappingData(allData);
+
+      // Also fetch all unique variation_skus from sku_pricing
+      const allVars: { variation_sku: string; brand: string }[] = [];
+      const seenVars = new Set<string>();
+      let varPage = 1;
+      while (true) {
+        const vParams = new URLSearchParams({ page: String(varPage), pageSize: "1000" });
+        if (mappingBrand !== "ALL") vParams.set("brand", mappingBrand);
+        const vRes = await fetch(`/api/products/pricing?${vParams}`);
+        const vJson = await vRes.json();
+        const vBatch = vJson.data ?? [];
+        for (const r of vBatch) {
+          if (r.variation_sku && !seenVars.has(r.variation_sku)) {
+            seenVars.add(r.variation_sku);
+            allVars.push({ variation_sku: r.variation_sku, brand: r.brand });
+          }
+        }
+        if (vBatch.length < 1000) break;
+        varPage++;
+      }
+      setAllVariations(allVars);
     } catch (e: any) {
       setToast({ message: e.message ?? "Network error", type: "error" });
     } finally {
       setMappingLoading(false);
     }
-  }, [mappingBrand, mappingPlatform, mappingStatus]);
+  }, [mappingBrand]);
 
   // ── Load data on tab / filter change ───────────────────────────────────────
 
@@ -1392,8 +1414,8 @@ export default function PricingPage() {
         {activeTab === "Platform Mapping" && (() => {
           // Group mapping data by variation_sku (derive from item_sku)
           const varMappingMap = new Map<string, { brand: string; platforms: Map<string, { listed: number; total: number }> }>();
+          // 1. Build from platform mapping data
           for (const m of mappingData) {
-            // Derive variation_sku from item_sku
             const varSku = m.brand === "DB"
               ? m.item_sku.replace(/(-\d{1,2}){1,2}$/, "").replace(/-(0[SML]|XL|2L|00)$/, "")
               : m.item_sku.slice(0, 9);
@@ -1408,6 +1430,13 @@ export default function PricingPage() {
             const pEntry = entry.platforms.get(m.platform)!;
             pEntry.total++;
             if (m.listing_status === "listed") pEntry.listed++;
+          }
+
+          // 2. Add SKUs from sku_pricing that have NO platform mapping at all
+          for (const v of allVariations) {
+            if (!varMappingMap.has(v.variation_sku)) {
+              varMappingMap.set(v.variation_sku, { brand: v.brand, platforms: new Map() });
+            }
           }
 
           const PLATFORM_ORDER = ["shopee", "lazada", "tiktok", "shopify"];
@@ -1437,7 +1466,19 @@ export default function PricingPage() {
             return { varSku, brand: data.brand, listedPlatforms, notListedPlatforms, partialPlatforms, missingPlatforms };
           });
 
-          // Stats
+          // Counts
+          const fullCount = varMappingList.filter((v) => v.listedPlatforms.length > 0 && v.notListedPlatforms.length === 0 && v.partialPlatforms.length === 0 && v.missingPlatforms.length === 0).length;
+          const incompleteCount = varMappingList.filter((v) => v.listedPlatforms.length > 0 && (v.notListedPlatforms.length > 0 || v.partialPlatforms.length > 0 || v.missingPlatforms.length > 0)).length;
+          const notListedCount = varMappingList.filter((v) => v.listedPlatforms.length === 0).length;
+
+          // Filter by status
+          const filteredMappingList = mappingStatus === "all" ? varMappingList
+            : mappingStatus === "full" ? varMappingList.filter((v) => v.listedPlatforms.length > 0 && v.notListedPlatforms.length === 0 && v.partialPlatforms.length === 0 && v.missingPlatforms.length === 0)
+            : mappingStatus === "incomplete" ? varMappingList.filter((v) => v.listedPlatforms.length > 0 && (v.notListedPlatforms.length > 0 || v.partialPlatforms.length > 0 || v.missingPlatforms.length > 0))
+            : mappingStatus === "not_listed" ? varMappingList.filter((v) => v.listedPlatforms.length === 0)
+            : varMappingList;
+
+          // Stats (from unfiltered list)
           const platformStats: Record<string, number> = {};
           for (const v of varMappingList) {
             for (const p of v.listedPlatforms) {
@@ -1468,6 +1509,30 @@ export default function PricingPage() {
                     <button key={b} className={`brand-tab${mappingBrand === b ? " active" : ""}`} onClick={() => setMappingBrand(b)}>{b}</button>
                   ))}
                 </div>
+                {/* Status filter */}
+                <div style={{ display: "flex", gap: 4 }}>
+                  {([
+                    { key: "all", label: "All", count: varMappingList.length },
+                    { key: "full", label: "Full Listed", count: fullCount },
+                    { key: "incomplete", label: "Partial", count: incompleteCount },
+                    { key: "not_listed", label: "Not Listed", count: notListedCount },
+                  ] as const).map(({ key, label, count }) => (
+                    <button
+                      key={key}
+                      onClick={() => setMappingStatus(key)}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, border: "1px solid",
+                        fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
+                        background: mappingStatus === key ? (key === "full" ? "rgba(5,150,105,0.1)" : key === "incomplete" ? "rgba(217,119,6,0.1)" : key === "not_listed" ? "rgba(220,38,38,0.1)" : "var(--accent-soft)") : "transparent",
+                        color: mappingStatus === key ? (key === "full" ? "var(--ok)" : key === "incomplete" ? "var(--warn)" : key === "not_listed" ? "var(--error)" : "var(--app-accent)") : "var(--text-muted)",
+                        borderColor: mappingStatus === key ? "currentColor" : "var(--border-2)",
+                      }}
+                    >
+                      {label} ({count})
+                    </button>
+                  ))}
+                </div>
+
                 <div style={{ marginLeft: "auto" }}>
                   <button className="ghost" onClick={() => mappingFileRef.current?.click()}>Import SKU Sheet</button>
                   <input ref={mappingFileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
@@ -1475,7 +1540,7 @@ export default function PricingPage() {
                 </div>
               </div>
               <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: 8 }}>
-                Showing <strong style={{ color: "var(--text)" }}>{varMappingList.length}</strong> variations
+                Showing <strong style={{ color: "var(--text)" }}>{filteredMappingList.length}</strong> of {varMappingList.length} variations
               </div>
             </div>
 
@@ -1483,7 +1548,7 @@ export default function PricingPage() {
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {mappingLoading ? (
                 <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>Loading mappings...</div>
-              ) : varMappingList.length === 0 ? (
+              ) : filteredMappingList.length === 0 ? (
                 <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>No platform mappings found.</div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
@@ -1497,7 +1562,7 @@ export default function PricingPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {varMappingList.map((v, i) => {
+                      {filteredMappingList.map((v, i) => {
                         const allListed = v.notListedPlatforms.length === 0 && v.partialPlatforms.length === 0 && v.missingPlatforms.length === 0;
                         return (
                           <tr key={v.varSku} style={{ background: i % 2 === 0 ? "transparent" : "var(--surface-2)" }}>
