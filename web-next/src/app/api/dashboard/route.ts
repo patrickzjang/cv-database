@@ -87,11 +87,31 @@ export async function POST(req: Request) {
       ? platforms.filter((p) => !p.includes("_EXC") && !p.includes("_REQ"))
       : filteredPlatforms.length > 0 ? filteredPlatforms : null;
 
-    // Run remaining queries in parallel
-    const [summaryRes, statusRes, trendRes, skusRes, platformSummaryRes] = await Promise.all([
+    // Calculate previous period for comparison
+    const periodMs = to.getTime() - from.getTime();
+    const prevFrom = new Date(from.getTime() - periodMs);
+    const prevTo = new Date(from.getTime());
+
+    // Run remaining queries in parallel (including previous period summary)
+    const [summaryRes, prevSummaryRes, rrpRes, prevRrpRes, statusRes, trendRes, skusRes, platformSummaryRes] = await Promise.all([
       supabase.schema("jst_raw").rpc("dashboard_summary", {
         p_from: from.toISOString(),
         p_to:   to.toISOString(),
+        p_platforms: effectivePlatforms,
+      }),
+      supabase.schema("jst_raw").rpc("dashboard_summary", {
+        p_from: prevFrom.toISOString(),
+        p_to:   prevTo.toISOString(),
+        p_platforms: effectivePlatforms,
+      }),
+      supabase.schema("jst_raw").rpc("dashboard_rrp_total", {
+        p_from: from.toISOString(),
+        p_to:   to.toISOString(),
+        p_platforms: effectivePlatforms,
+      }),
+      supabase.schema("jst_raw").rpc("dashboard_rrp_total", {
+        p_from: prevFrom.toISOString(),
+        p_to:   prevTo.toISOString(),
         p_platforms: effectivePlatforms,
       }),
       supabase.schema("jst_raw").rpc("dashboard_status_breakdown", {
@@ -118,7 +138,7 @@ export async function POST(req: Request) {
     ]);
 
     // Surface any DB errors
-    const errors = [summaryRes, statusRes, trendRes, skusRes, platformsRes, platformSummaryRes]
+    const errors = [summaryRes, prevSummaryRes, rrpRes, prevRrpRes, statusRes, trendRes, skusRes, platformsRes, platformSummaryRes]
       .map((r) => r.error?.message)
       .filter(Boolean);
     if (errors.length) {
@@ -126,6 +146,7 @@ export async function POST(req: Request) {
     }
 
     const summary = Array.isArray(summaryRes.data) ? summaryRes.data[0] : summaryRes.data;
+    const prevSummary = Array.isArray(prevSummaryRes.data) ? prevSummaryRes.data[0] : prevSummaryRes.data;
 
     return NextResponse.json({
       from: from.toISOString(),
@@ -139,6 +160,9 @@ export async function POST(req: Request) {
         net_revenue: 0,
         avg_order_value: 0,
       },
+      prevSummary: prevSummary ?? null,
+      rrpTotal: rrpRes.data ?? 0,
+      prevRrpTotal: prevRrpRes.data ?? 0,
       statusBreakdown:  statusRes.data          ?? [],
       dailyTrend:       trendRes.data           ?? [],
       topSkus:          skusRes.data             ?? [],

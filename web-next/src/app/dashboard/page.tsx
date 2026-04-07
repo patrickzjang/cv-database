@@ -10,9 +10,8 @@ type DateRange = "today" | "7d" | "30d" | "month" | "custom";
 type Summary = {
   total_orders: number;
   gross_revenue: number;
+  shop_discounts: number;
   platform_discounts: number;
-  shipping_income: number;
-  shipping_cost: number;
   net_revenue: number;
   avg_order_value: number;
 };
@@ -26,12 +25,21 @@ type DashboardData = {
   from: string;
   to: string;
   summary: Summary;
+  prevSummary?: Summary | null;
+  rrpTotal?: number;
+  prevRrpTotal?: number;
   statusBreakdown: StatusRow[];
   dailyTrend: TrendRow[];
   topSkus: SkuRow[];
   platformSummary: PlatformRow[];
   platformList: string[];
 };
+
+function pctChange(current: number | null | undefined, prev: number | null | undefined): string | null {
+  if (!current || !prev || prev === 0) return null;
+  const change = ((current - prev) / Math.abs(prev)) * 100;
+  return change > 0 ? `+${change.toFixed(1)}%` : `${change.toFixed(1)}%`;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -130,9 +138,9 @@ function LineChart({ data }: { data: TrendRow[] }) {
       {yTicks.map((t) => (
         <g key={t.y}>
           <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y}
-            stroke="#1f2a4a" strokeWidth="1" strokeDasharray="3 4" />
+            stroke="var(--border-2)" strokeWidth="1" strokeDasharray="3 4" />
           <text x={PAD.left - 6} y={t.y + 4} textAnchor="end"
-            fontSize="10" fill="#9db0d0">{t.label}</text>
+            fontSize="10" fill="var(--text-muted)">{t.label}</text>
         </g>
       ))}
 
@@ -151,18 +159,18 @@ function LineChart({ data }: { data: TrendRow[] }) {
 
       {/* X labels */}
       {xLabels.map(({ i, label }) => (
-        <text key={i} x={xOf(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="#9db0d0">
+        <text key={i} x={xOf(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="var(--text-muted)">
           {label}
         </text>
       ))}
 
       {/* Legend */}
       <rect x={PAD.left} y={2} width={10} height={10} rx="2" fill="#3d5afe" />
-      <text x={PAD.left + 14} y={11} fontSize="10" fill="#e9f1ff">Gross</text>
+      <text x={PAD.left + 14} y={11} fontSize="10" fill="var(--text)">Gross</text>
       <rect x={PAD.left + 52} y={2} width={10} height={10} rx="2" fill="#00c853" />
-      <text x={PAD.left + 66} y={11} fontSize="10" fill="#e9f1ff">Net</text>
+      <text x={PAD.left + 66} y={11} fontSize="10" fill="var(--text)">Net</text>
       <line x1={PAD.left + 92} y1={7} x2={PAD.left + 102} y2={7} stroke="#f5a623" strokeWidth="2" strokeDasharray="4 2" />
-      <text x={PAD.left + 106} y={11} fontSize="10" fill="#e9f1ff">Orders</text>
+      <text x={PAD.left + 106} y={11} fontSize="10" fill="var(--text)">Orders</text>
     </svg>
   );
 }
@@ -234,14 +242,15 @@ function MultiSelectFilter({
           <div style={{
             position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: "100%",
             background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 10,
-            boxShadow: "0 10px 28px rgba(0,0,0,0.12)", zIndex: 100, padding: 6,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.10)", zIndex: 999, padding: 6,
           }}>
             <button
               className="ghost"
               style={{ width: "100%", textAlign: "left", marginBottom: 4,
-                background: allSelected ? "var(--accent-soft)" : "transparent",
-                borderColor: allSelected ? "#2c3f7a" : "transparent",
-                color: allSelected ? "#fff" : "var(--text-muted)" }}
+                background: allSelected ? "rgba(30,64,175,0.08)" : "transparent",
+                borderColor: allSelected ? "rgba(30,64,175,0.2)" : "transparent",
+                color: allSelected ? "var(--app-accent)" : "var(--text-muted)",
+                fontWeight: allSelected ? 600 : 400 }}
               onClick={() => { onChange([]); setOpen(false); }}
             >
               {allLabel}
@@ -252,17 +261,18 @@ function MultiSelectFilter({
                 <button key={code}
                   className="ghost"
                   style={{ width: "100%", textAlign: "left",
-                    background: active ? "var(--accent-soft)" : "transparent",
-                    borderColor: active ? "#2c3f7a" : "transparent",
-                    color: active ? "#fff" : "var(--text)",
+                    background: active ? "rgba(30,64,175,0.08)" : "transparent",
+                    borderColor: active ? "rgba(30,64,175,0.2)" : "transparent",
+                    color: active ? "var(--app-accent)" : "var(--text)",
+                    fontWeight: active ? 600 : 400,
                     display: "flex", alignItems: "center", gap: 8 }}
                   onClick={() => toggle(code)}
                 >
                   <span style={{ width: 14, height: 14, borderRadius: 3,
-                    border: `2px solid ${active ? "#3d5afe" : "#4a5a88"}`,
-                    background: active ? "#3d5afe" : "transparent",
+                    border: `2px solid ${active ? "var(--app-accent)" : "var(--border-2)"}`,
+                    background: active ? "var(--app-accent)" : "transparent",
                     display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "0.6rem", flexShrink: 0 }}>
+                    fontSize: "0.6rem", flexShrink: 0, color: "#fff" }}>
                     {active ? "✓" : ""}
                   </span>
                   <span>{label}</span>
@@ -369,7 +379,7 @@ export default function DashboardPage() {
     <div>
       <div className="page">
         {/* ── Filters ── */}
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16, position: "relative", zIndex: 50 }}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
 
             {/* Date range buttons */}
@@ -450,14 +460,40 @@ export default function DashboardPage() {
           <>
             {/* ── Summary Cards (main row) ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 10 }}>
-              {[
-                { label: "Total Orders",      value: fmtInt(summary?.total_orders),          icon: "📦", color: "#3d5afe" },
-                { label: "Gross Revenue",      value: `฿${fmt(summary?.gross_revenue)}`,     icon: "💰", color: "#f5a623" },
-                { label: "Net Revenue",        value: `฿${fmt(summary?.net_revenue)}`,       icon: "✅", color: "#00c853", tooltip: "After platform discounts" },
-                { label: "Platform Fees",      value: `-฿${fmt(summary?.platform_discounts)}`, icon: "🏷️", color: "#ff6b6b" },
-              ].map(({ label, value, icon, color, tooltip }) => (
+              {(() => {
+                const prev = data?.prevSummary;
+                const rrp = data?.rrpTotal ?? 0;
+                const prevRrp = data?.prevRrpTotal ?? 0;
+                const paidAmt = summary?.net_revenue ?? 0;
+                const platDisc = summary?.platform_discounts ?? 0;
+                const grossRev = paidAmt + platDisc; // Gross Revenue = paid_amount + platform discount
+                const totalDisc = rrp - grossRev; // Discount = RRP - Gross Revenue (shop discount ที่ร้านแบกรับ)
+
+                const prevPaid = prev?.net_revenue ?? 0;
+                const prevPlatDisc = prev?.platform_discounts ?? 0;
+                const prevGross = prevPaid + prevPlatDisc;
+                const prevTotalDisc = prevRrp - prevGross;
+
+                return [
+                  { label: "Total Orders", value: fmtInt(summary?.total_orders), icon: "📦", color: "#3d5afe", change: pctChange(summary?.total_orders, prev?.total_orders) },
+                  { label: "RRP", value: `฿${fmt(rrp)}`, icon: "💰", color: "#f5a623", tooltip: "ราคาป้ายรวม (จาก SKU pricing × จำนวน)", change: pctChange(rrp, prevRrp) },
+                  { label: "Discounts", value: `-฿${fmt(totalDisc)}`, icon: "🏷️", color: "#ff6b6b", tooltip: "ส่วนลดจากร้าน (RRP - Gross Revenue)", change: pctChange(totalDisc, prevTotalDisc) },
+                  { label: "Gross Revenue", value: `฿${fmt(grossRev)}`, icon: "✅", color: "#00c853", tooltip: "ยอดขายจริง = paid_amount + platform discount", change: pctChange(grossRev, prevGross) },
+                ];
+              })().map(({ label, value, icon, color, tooltip, change }) => (
                 <div key={label} className="card" style={{ padding: "20px 22px" }} title={tooltip}>
-                  <div style={{ fontSize: "1.5rem", marginBottom: 6 }}>{icon}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ fontSize: "1.5rem", marginBottom: 6 }}>{icon}</div>
+                    {change && (
+                      <span style={{
+                        fontSize: "0.78rem", fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                        color: change.startsWith("+") ? "var(--ok)" : "var(--error)",
+                        background: change.startsWith("+") ? "rgba(5,150,105,0.08)" : "rgba(220,38,38,0.08)",
+                      }}>
+                        {change}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ color: "var(--text-muted)", fontSize: "0.82rem", fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
                   </div>
@@ -470,11 +506,19 @@ export default function DashboardPage() {
 
             {/* ── Summary Cards (secondary row) ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 16 }}>
-              {[
-                { label: "Shipping Income", value: `฿${fmt(summary?.shipping_income)}`, color: "#8ea1ff" },
-                { label: "Shipping Cost",   value: `฿${fmt(summary?.shipping_cost)}`,   color: "#f5a623" },
-                { label: "Avg Order Value", value: `฿${fmt(summary?.avg_order_value)}`, color: "#9db0d0" },
-              ].map(({ label, value, color }) => (
+              {(() => {
+                // Calculate cancel + return rate from status breakdown
+                const totalOrders = summary?.total_orders || 0;
+                const cancelCount = data?.statusBreakdown?.find((s) => s.status === "5" || s.status === "Cancelled")?.cnt ?? 0;
+                const returnCount = data?.statusBreakdown?.find((s) => s.status === "6" || s.status === "Returned" || s.status === "Question")?.cnt ?? 0;
+                const cancelRate = totalOrders > 0 ? ((cancelCount / totalOrders) * 100).toFixed(1) : "0";
+                const returnRate = totalOrders > 0 ? ((returnCount / totalOrders) * 100).toFixed(1) : "0";
+                return [
+                  { label: "Avg Order Value", value: `฿${fmt(summary?.avg_order_value)}`, color: "var(--app-accent)" },
+                  { label: "Cancel Rate", value: `${cancelRate}% (${fmtInt(cancelCount)})`, color: Number(cancelRate) > 10 ? "var(--error)" : Number(cancelRate) > 5 ? "var(--warn)" : "var(--ok)" },
+                  { label: "Return Rate", value: `${returnRate}% (${fmtInt(returnCount)})`, color: Number(returnRate) > 5 ? "var(--error)" : Number(returnRate) > 2 ? "var(--warn)" : "var(--ok)" },
+                ];
+              })().map(({ label, value, color }) => (
                 <div key={label} className="card" style={{ padding: "14px 18px" }}>
                   <div style={{ color: "var(--text-muted)", fontSize: "0.78rem", fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
