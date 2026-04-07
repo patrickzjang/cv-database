@@ -11,6 +11,10 @@ type PLSummary = {
   gross_revenue: number;
   cogs: number;
   gross_profit: number;
+  commission: number;
+  service_fee: number;
+  payment_fee: number;
+  other_fee: number;
   platform_fees: number;
   freight_income: number;
   freight_fee: number;
@@ -105,7 +109,7 @@ const CHANNELS = [
 const DATE_RANGES: { key: DateRange; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "7d",    label: "7 Days" },
-  { key: "30d",   label: "30 Days" },
+  { key: "30d",   label: "Last Month" },
   { key: "month", label: "This Month" },
   { key: "custom", label: "Custom" },
 ];
@@ -392,7 +396,29 @@ export default function ProfitLossPage() {
         if (res.status === 401) { router.push("/login"); return; }
         setError(json.error);
       } else {
-        setData(json);
+        // Map API response to UI format
+        const totals = json.totals || json.summary || {};
+        const grossProfit = (totals.gross_revenue ?? 0) - (totals.cogs ?? 0);
+        setData({
+          summary: {
+            gross_revenue: totals.gross_revenue ?? 0,
+            cogs: totals.cogs ?? 0,
+            gross_profit: grossProfit,
+            platform_fees: totals.platform_fees ?? 0,
+            commission: totals.commission ?? 0,
+            service_fee: totals.service_fee ?? 0,
+            payment_fee: totals.payment_fee ?? 0,
+            other_fee: totals.other_fee ?? 0,
+            freight_income: totals.freight_income ?? 0,
+            freight_fee: totals.freight_fee ?? 0,
+            shipping_net: totals.shipping_net ?? 0,
+            net_profit: totals.net_profit ?? 0,
+          },
+          platformBreakdown: json.platformSummary ?? json.platformBreakdown ?? [],
+          dailyTrend: json.dailyTrend ?? [],
+          topSkus: json.skuProfitability?.slice(0, 20) ?? json.topSkus ?? [],
+          bottomSkus: json.skuProfitability?.slice(-20).reverse() ?? json.bottomSkus ?? [],
+        });
       }
     } catch (e: any) {
       setError(e.message ?? "Network error");
@@ -509,13 +535,16 @@ export default function ProfitLossPage() {
             {/* ── P&L Summary Cards ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 16 }}>
               {[
-                { label: "Gross Revenue", value: `฿${fmt(summary?.gross_revenue)}`, color: "var(--ok)", bg: "rgba(5,150,105,0.06)" },
-                { label: "COGS", value: `฿${fmt(summary?.cogs)}`, color: "var(--text-muted)", bg: "var(--surface-2)" },
-                { label: "Gross Profit", value: `฿${fmt(summary?.gross_profit)}`, color: "var(--cyan)", bg: "rgba(0,180,216,0.06)" },
-                { label: "Platform Fees", value: `-฿${fmt(summary?.platform_fees)}`, color: "var(--error)", bg: "rgba(220,38,38,0.06)" },
-                { label: "Shipping Net", value: `฿${fmt(summary?.shipping_net)}`, color: "var(--text-muted)", bg: "var(--surface-2)" },
-              ].map(({ label, value, color, bg }) => (
-                <div key={label} className="card" style={{ padding: "18px 20px", background: bg }}>
+                { label: "Gross Revenue", value: `฿${fmt(summary?.gross_revenue)}`, color: "var(--ok)", bg: "rgba(5,150,105,0.06)", tooltip: "" },
+                { label: "COGS", value: `-฿${fmt(summary?.cogs)}`, color: "var(--text-muted)", bg: "var(--surface-2)", tooltip: "" },
+                { label: "Gross Profit", value: `฿${fmt(summary?.gross_profit)}`, color: "var(--app-accent)", bg: "rgba(30,64,175,0.06)", tooltip: "Gross Revenue - COGS" },
+                { label: "Commission", value: `-฿${fmt((summary as any)?.commission)}`, color: "var(--error)", bg: "rgba(220,38,38,0.04)", tooltip: "" },
+                { label: "Service Fee", value: `-฿${fmt((summary as any)?.service_fee)}`, color: "var(--error)", bg: "rgba(220,38,38,0.04)", tooltip: "" },
+                { label: "Payment Fee", value: `-฿${fmt((summary as any)?.payment_fee)}`, color: "var(--error)", bg: "rgba(220,38,38,0.04)", tooltip: "" },
+                { label: "Other Fee", value: `-฿${fmt((summary as any)?.other_fee)}`, color: "var(--error)", bg: "rgba(220,38,38,0.04)", tooltip: "" },
+                { label: "Total Fees", value: `-฿${fmt(summary?.platform_fees)}`, color: "var(--error)", bg: "rgba(220,38,38,0.06)", tooltip: "Commission + Service + Payment + Other" },
+              ].map(({ label, value, color, bg, tooltip }) => (
+                <div key={label} className="card" style={{ padding: "18px 20px", background: bg }} title={tooltip}>
                   <div style={{ color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {label}
                   </div>

@@ -17,8 +17,8 @@ function getDateRange(payload: DashboardPayload): { from: Date; to: Date } {
 
   if (payload.dateRange === "custom" && payload.dateFrom && payload.dateTo) {
     return {
-      from: new Date(payload.dateFrom),
-      to:   new Date(payload.dateTo + "T23:59:59.999Z"),
+      from: new Date(payload.dateFrom + (payload.dateFrom.includes("T") ? "" : "T00:00:00.000Z")),
+      to:   new Date(payload.dateTo + (payload.dateTo.includes("T") ? "" : "T23:59:59.999Z")),
     };
   }
 
@@ -40,11 +40,14 @@ function getDateRange(payload: DashboardPayload): { from: Date; to: Date } {
     return { from, to: now };
   }
 
-  // default: 30d
-  const from = new Date(now);
-  from.setDate(now.getDate() - 29);
-  from.setHours(0, 0, 0, 0);
-  return { from, to: now };
+  // default: 30d = last calendar month (1st to last day) in UTC
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth(); // current month (0-based)
+  const prevM = m === 0 ? 11 : m - 1;
+  const prevY = m === 0 ? y - 1 : y;
+  const lastMonthStart = new Date(Date.UTC(prevY, prevM, 1, 0, 0, 0, 0));
+  const lastMonthEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999)); // day 0 of current month = last day of prev month
+  return { from: lastMonthStart, to: lastMonthEnd };
 }
 
 export async function POST(req: Request) {

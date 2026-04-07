@@ -291,7 +291,7 @@ function MultiSelectFilter({
 const DATE_RANGES: { key: DateRange; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "7d",    label: "7 Days" },
-  { key: "30d",   label: "30 Days" },
+  { key: "30d",   label: "Last Month" },
   { key: "month", label: "This Month" },
   { key: "custom",label: "Custom" },
 ];
