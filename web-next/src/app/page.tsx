@@ -305,36 +305,16 @@ export default function Home() {
     setMasterUploading(false);
   };
 
-  const buildImageMap = async (data: Row[]) => {
-    const map = new Map<string, ImageRef[]>();
-    // Get unique VARIATION_SKUs + brands
-    const skuBrands = new Map<string, string>();
-    for (const row of data) {
-      const sku = row[VARIATION_COLUMN];
-      if (sku && !skuBrands.has(String(sku))) {
-        skuBrands.set(String(sku), String(row.BRAND || ""));
+  // Load images on-demand when user clicks "View Images" — not during search
+  const loadImagesForSku = async (sku: string, brand: string): Promise<ImageRef[]> => {
+    try {
+      const res = await fetch(`/api/main-images?sku=${encodeURIComponent(sku)}&brand=${encodeURIComponent(brand)}`);
+      const json = await res.json();
+      if (json.images?.length > 0) {
+        return json.images.map((img: any) => ({ name: img.filename, url: img.url }));
       }
-    }
-    // Fetch main images from R2 for each unique variation
-    await Promise.all(
-      [...skuBrands.entries()].map(async ([sku, brand]) => {
-        try {
-          const res = await fetch(`/api/main-images?sku=${encodeURIComponent(sku)}&brand=${encodeURIComponent(brand)}`);
-          const json = await res.json();
-          if (json.images?.length > 0) {
-            map.set(sku, json.images.map((img: any) => ({
-              name: img.filename,
-              url: img.url,
-            })));
-          } else {
-            map.set(sku, []);
-          }
-        } catch {
-          map.set(sku, []);
-        }
-      })
-    );
-    return map;
+    } catch { /* ignore */ }
+    return [];
   };
 
   const runSearch = useCallback(async () => {
@@ -377,9 +357,8 @@ export default function Home() {
         return;
       }
 
-      const map = await buildImageMap(dataRows);
       setRows(dataRows);
-      setImageMap(map);
+      setImageMap(new Map()); // Images load on-demand when clicked
       setSearchStatus(`${total || 0} total, ${shown} shown.`);
       setPageCount(nextPageCount);
     } catch (err: any) {
@@ -399,10 +378,23 @@ export default function Home() {
     }
   }, [activeTab, currentPage, pageSize, currentBrand, runSearch]);
 
-  const openModal = (variation: string, images: ImageRef[]) => {
+  const openModal = async (variation: string, brand: string) => {
     setModalTitle(`Images for ${variation}`);
-    setModalImages(images);
+    setModalImages([]); // show loading
     setModalOpen(true);
+
+    // Check cache first
+    const cached = imageMap.get(variation);
+    if (cached && cached.length > 0) {
+      setModalImages(cached);
+      return;
+    }
+
+    // Load from R2
+    const images = await loadImagesForSku(variation, brand);
+    setModalImages(images);
+    // Cache for next time
+    setImageMap((prev) => new Map(prev).set(variation, images));
   };
 
   const downloadUrl = async (url: string, filename: string) => {
@@ -526,7 +518,7 @@ export default function Home() {
                           src={img.url}
                           alt={img.name}
                           className="thumb"
-                          onClick={() => openModal(String(variation), images)}
+                          onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
                         />
                         <details className="download-menu" onClick={(e) => e.stopPropagation()}>
                           <summary className="ghost download-trigger">Download ▾</summary>
@@ -650,7 +642,7 @@ export default function Home() {
                           src={img.url}
                           alt={img.name}
                           className="thumb"
-                          onClick={() => openModal(String(variation), images)}
+                          onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
                         />
                         <details className="download-menu" onClick={(e) => e.stopPropagation()}>
                           <summary className="ghost download-trigger">Download ▾</summary>

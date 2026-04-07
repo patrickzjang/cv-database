@@ -170,24 +170,29 @@ export default function DAMUploadPage() {
         const streamRes = await fetch("/api/dam/stream/upload-url", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ sku, brand, filename: file.name }),
+          body:    JSON.stringify({ sku, brand, filename: file.name, fileSize: file.size }),
         });
-        if (!streamRes.ok) throw new Error(await streamRes.text());
+        if (!streamRes.ok) {
+          const errJson = await streamRes.json().catch(() => ({ error: `Stream upload: ${streamRes.status}` }));
+          throw new Error(errJson.error || `Stream upload: ${streamRes.status}`);
+        }
         const { uid: streamUid, uploadURL } = await streamRes.json();
 
         updateItem(id, { progress: 10 });
 
-        // 2. Upload directly to Stream using tus/fetch
+        // 2. Upload directly to Stream using TUS PATCH
         const xhr = new XMLHttpRequest();
         await new Promise<void>((resolve, reject) => {
-          xhr.open("POST", uploadURL);
-          xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+          xhr.open("PATCH", uploadURL);
+          xhr.setRequestHeader("Tus-Resumable", "1.0.0");
+          xhr.setRequestHeader("Upload-Offset", "0");
+          xhr.setRequestHeader("Content-Type", "application/offset+octet-stream");
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) {
               updateItem(id, { progress: Math.round((e.loaded / e.total) * 75) + 10 });
             }
           };
-          xhr.onload  = () => (xhr.status < 300 ? resolve() : reject(new Error(`Stream upload: ${xhr.status}`)));
+          xhr.onload  = () => (xhr.status < 400 ? resolve() : reject(new Error(`Stream upload: ${xhr.status}`)));
           xhr.onerror = () => reject(new Error("Stream upload network error"));
           xhr.send(file);
         });
