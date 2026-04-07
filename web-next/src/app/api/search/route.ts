@@ -95,6 +95,7 @@ export async function POST(req: Request) {
       VARIATION_SKU: r.variation_sku,
       ITEM_SKU: r.item_sku,
       DESCRIPTION: r.description,
+      UPC: r.upc ?? "",
       "Price Tag": r.price_tag ?? r.rrp,
     }));
 

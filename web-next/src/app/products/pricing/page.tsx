@@ -23,6 +23,9 @@ type SkuPricing = {
   price_flash_sale?: number;
   min_price?: number;
   est_margin?: number;
+  category?: string;
+  collection?: string;
+  size?: string;
 };
 
 type PricingRule = {
@@ -39,6 +42,7 @@ type PricingRule = {
   pct_mega: number;
   pct_flash_sale: number;
   pct_est_margin?: number;
+  cogs_ratio?: number; // avg(cogs_inc_vat / rrp) for real-time margin calc
 };
 
 type PlatformMapping = {
@@ -97,6 +101,24 @@ function marginTextColor(margin: number | null | undefined, isDecimal = false): 
   if (pct < 10) return "var(--error)";
   if (pct < 20) return "var(--warn)";
   return "var(--ok)";
+}
+
+/**
+ * Real-time margin calc using weighted avg selling price:
+ * RSP 40%, Campaign A 30%, Mega 15%, Flash Sale 15%
+ * weighted_pct = 0.4×%RSP + 0.3×%A + 0.15×%Mega + 0.15×%FS
+ * margin = (weightedPrice - COGS - platformFee) / weightedPrice
+ *        = 1 - (cogs_ratio / weighted_pct) - platformFeeRate
+ */
+function calcRuleMargin(rule: PricingRule, platformFeeRate: number): number | null {
+  if (rule.cogs_ratio == null || rule.cogs_ratio <= 0) return null;
+  const rsp = rule.pct_rsp ?? 0;
+  const a = rule.pct_campaign_a ?? 0;
+  const mega = rule.pct_mega ?? 0;
+  const fs = rule.pct_flash_sale ?? 0;
+  const weightedPct = 0.4 * rsp + 0.3 * a + 0.15 * mega + 0.15 * fs;
+  if (weightedPct <= 0) return null;
+  return 1 - (rule.cogs_ratio / weightedPct) - platformFeeRate;
 }
 
 function groupRowBg(index: number): string {
@@ -471,7 +493,7 @@ export default function PricingPage() {
   );
 
   // ── Drag fill for rules ──
-  const RULES_DRAG_COLS = ["pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"];
+  const RULES_DRAG_COLS = ["category", "sub_category", "pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"];
   const { startDrag: rulesStartDrag, isHighlighted: rulesIsHighlighted } = useDragFill(
     RULES_DRAG_COLS,
     // Vertical fill
@@ -539,6 +561,7 @@ export default function PricingPage() {
   // ── Pricing Rules state ──
   const [rulesData, setRulesData] = useState<PricingRule[]>([]);
   const [rulesTotal, setRulesTotal] = useState(0);
+  const [maxPlatformFeeRate, setMaxPlatformFeeRate] = useState(0);
   const [rulesBrand, setRulesBrand] = useState("PAN");
   const [rulesPage, setRulesPage] = useState(1);
   const [rulesPageSize, setRulesPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -596,6 +619,7 @@ export default function PricingPage() {
       if (res.ok) {
         setRulesData(json.data ?? []);
         setRulesTotal(json.total ?? json.data?.length ?? 0);
+        if (json.maxPlatformFeeRate != null) setMaxPlatformFeeRate(json.maxPlatformFeeRate);
       } else {
         setToast({ message: json.error ?? "Failed to load rules", type: "error" });
       }
@@ -678,7 +702,9 @@ export default function PricingPage() {
 
   // Save a pricing field and apply to ALL sizes under the same VARIATION_SKU
   async function savePricingCell(row: SkuPricing, field: string, value: string) {
-    const parsedVal = value === "" ? null : parseFloat(value);
+    const textFields = ["category", "collection", "size"];
+    const isText = textFields.includes(field);
+    const parsedVal = value === "" ? null : isText ? value : parseFloat(value);
     // Find all ITEM_SKUs under this VARIATION_SKU
     const siblings = gridData.filter((r) => r.variation_sku === row.variation_sku);
     const items = siblings.map((s) => ({
@@ -992,17 +1018,7 @@ export default function PricingPage() {
               </svg>
               Push to Sheet
             </button>
-            <button
-              className="primary"
-              onClick={syncGoogleSheet}
-              disabled={syncing}
-              style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                <path d="M8 13V3" /><path d="M12 9l-4 4-4-4" />
-              </svg>
-              Pull from Sheet
-            </button>
+            {/* Pull from Sheet removed — sheet data may be incorrect and corrupt the database */}
           </div>
         </div>
 
@@ -1052,13 +1068,19 @@ export default function PricingPage() {
                       e.target.value = "";
                     }}
                   />
-                  <button className="ghost" onClick={exportSelected} disabled={selectedVars.size === 0}
-                    title={selectedVars.size > 0 ? `Export ${selectedVars.size} selected` : "Select rows first"}>
-                    Export Selected ({selectedVars.size})
-                  </button>
-                  <button className="ghost" onClick={exportAll}>
-                    Export All
-                  </button>
+                  <details className="export-dropdown">
+                    <summary className="ghost export-dropdown-trigger">
+                      Export ▾
+                    </summary>
+                    <div className="export-dropdown-menu">
+                      <button type="button" onClick={(e) => { exportAll(); (e.currentTarget.closest("details") as HTMLDetailsElement)!.open = false; }}>
+                        Export All
+                      </button>
+                      <button type="button" disabled={selectedVars.size === 0} onClick={(e) => { exportSelected(); (e.currentTarget.closest("details") as HTMLDetailsElement)!.open = false; }}>
+                        Export Selected{selectedVars.size > 0 ? ` (${selectedVars.size})` : ""}
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
 
@@ -1348,11 +1370,19 @@ export default function PricingPage() {
                           <td style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
                             {rule.collection_key ?? "–"}
                           </td>
-                          <td>
+                          <td data-col="category" style={{
+                            position: "relative",
+                            background: rulesIsHighlighted(i, "category") ? "rgba(30,64,175,0.10)" : undefined,
+                          }} className="drag-fill-cell">
                             <EditableCell value={rule.category} format="text" onSave={(v) => saveRuleCell(rule, "category", v)} />
+                            <DragHandle onMouseDown={() => rulesStartDrag(i, "category", rule.category ?? null)} />
                           </td>
-                          <td>
+                          <td data-col="sub_category" style={{
+                            position: "relative",
+                            background: rulesIsHighlighted(i, "sub_category") ? "rgba(30,64,175,0.10)" : undefined,
+                          }} className="drag-fill-cell">
                             <EditableCell value={rule.sub_category} format="text" onSave={(v) => saveRuleCell(rule, "sub_category", v)} />
+                            <DragHandle onMouseDown={() => rulesStartDrag(i, "sub_category", rule.sub_category ?? null)} />
                           </td>
                           {(["pct_rsp", "pct_campaign_a", "pct_mega", "pct_flash_sale"] as const).map((col) => (
                             <td key={col} data-col={col} style={{
@@ -1367,15 +1397,19 @@ export default function PricingPage() {
                               <DragHandle onMouseDown={() => rulesStartDrag(i, col, (rule as any)[col])} />
                             </td>
                           ))}
-                          <td
-                            style={{
-                              textAlign: "right",
-                              color: marginTextColor(rule.pct_est_margin, true),
-                              fontWeight: 600,
-                            }}
-                          >
-                            {marginPct(rule.pct_est_margin, true) != null ? `${marginPct(rule.pct_est_margin, true)!.toFixed(1)}%` : "–"}
-                          </td>
+                          {(() => {
+                            const m = calcRuleMargin(rule, maxPlatformFeeRate);
+                            return (
+                              <td style={{
+                                textAlign: "right",
+                                color: marginTextColor(m, true),
+                                fontWeight: 600,
+                                background: marginColor(m, true),
+                              }}>
+                                {m != null ? `${(m * 100).toFixed(1)}%` : "–"}
+                              </td>
+                            );
+                          })()}
                         </tr>
                       ))}
                     </tbody>
@@ -1493,7 +1527,7 @@ export default function PricingPage() {
               {PLATFORMS.map((p) => (
                 <div key={p} className="card" style={{ padding: "16px 20px", textAlign: "center" }}>
                   <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{p}</div>
-                  <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--app-accent)" }}>
+                  <div style={{ fontSize: "1.6rem", fontWeight: 700, color: PLATFORM_COLORS[PLATFORM_DB_KEY[p] ?? p.toLowerCase()]?.color ?? "var(--app-accent)" }}>
                     {(platformStats[PLATFORM_DB_KEY[p] ?? p.toLowerCase()] ?? 0).toLocaleString("th-TH")}
                   </div>
                   <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>variations listed</div>

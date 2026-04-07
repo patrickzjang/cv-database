@@ -78,18 +78,19 @@ serve(async (_req) => {
       if (!Array.isArray(list) || list.length === 0) break;
 
       // 3) Map to inventory_raw rows
+      // JST actual fields: skuId, itemId, qty, orderLock, defectiveQty, returnQty, purchaseQty, virtualQty
       const rows = list.map((inv: any) => ({
-        sku_id:         inv.skuId,
-        sku_code:       inv.skuCode,
-        item_id:        inv.itemId,
-        item_name:      inv.itemName,
-        warehouse_id:   inv.warehouseId,
-        warehouse_name: inv.warehouseName,
-        available_qty:  inv.availableQty,
-        actual_qty:     inv.actualQty,
-        defective_qty:  inv.defectiveQty,
-        locked_qty:     inv.lockedQty,
-        cost_price:     inv.costPrice,
+        sku_id:         inv.skuId ?? inv.sku_id ?? "",
+        sku_code:       inv.skuCode ?? inv.skuId ?? "",
+        item_id:        inv.itemId ?? inv.item_id ?? "",
+        item_name:      inv.itemName ?? inv.item_name ?? null,
+        warehouse_id:   inv.warehouseId ?? inv.warehouse_id ?? 0,
+        warehouse_name: inv.warehouseName ?? inv.warehouse_name ?? null,
+        available_qty:  inv.qty ?? inv.availableQty ?? 0,
+        actual_qty:     (inv.qty ?? 0) + (inv.orderLock ?? 0),
+        defective_qty:  inv.defectiveQty ?? inv.defective_qty ?? 0,
+        locked_qty:     inv.orderLock ?? inv.lockedQty ?? 0,
+        cost_price:     inv.costPrice ?? inv.cost_price ?? null,
         raw_json:       inv,
         synced_at:      now.toISOString(),
       }));

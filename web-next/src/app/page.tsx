@@ -22,7 +22,7 @@ type FileItem = {
 type ImageRef = { name: string; url: string; key?: string };
 
 type Row = Record<string, any>;
-const HIDDEN_SEARCH_COLUMNS = new Set(["MONTH"]);
+const HIDDEN_SEARCH_COLUMNS = new Set(["MONTH", "GROUP", "ITEM_SKU"]);
 type MasterUploadResult = {
   file: string;
   brand?: string;
@@ -50,7 +50,17 @@ function getVisibleTableHeaders(row: Row): string[] {
   return headers;
 }
 
+const COLUMN_WIDTHS: Record<string, string> = {
+  BRAND: "70px",
+  PARENTS_SKU: "120px",
+  VARIATION_SKU: "140px",
+  DESCRIPTION: "220px",
+  UPC: "140px",
+  "Price Tag": "90px",
+};
+
 function getHeaderWidth(header: string): string {
+  if (COLUMN_WIDTHS[header]) return COLUMN_WIDTHS[header];
   const chars = Math.max(8, header.length + 2);
   return `${chars}ch`;
 }
@@ -95,7 +105,7 @@ export default function Home() {
   const [imageMap, setImageMap] = useState<Map<string, ImageRef[]>>(new Map());
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [modalImages, setModalImages] = useState<ImageRef[]>([]);
   const [modalTitle, setModalTitle] = useState("Images");
@@ -511,17 +521,28 @@ export default function Home() {
     return lines.join("\n");
   };
 
-  const downloadCsv = () => {
-    const csv = toCsv(rows, imageMap);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const downloadCsvFile = (csv: string, filename: string) => {
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "products.csv";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const exportAll = () => {
+    const csv = toCsv(rows, imageMap);
+    downloadCsvFile(csv, `products-all-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  const exportSelected = () => {
+    if (selectedRows.size === 0) return;
+    const filtered = rows.filter((r) => selectedRows.has(r[VARIATION_COLUMN]));
+    const csv = toCsv(filtered, imageMap);
+    downloadCsvFile(csv, `products-selected-${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
   const renderTable = () => {
@@ -541,7 +562,11 @@ export default function Home() {
             return (
               <div className="mobile-card" key={variation}>
                 <div className="mobile-card-header">
-                  <div className="mobile-card-title">VARIATION_SKU:<br />{variation}</div>
+                  <div className="mobile-card-title">
+                    <a href={`/products/${encodeURIComponent(variation)}`} style={{ color: "var(--cyan)", textDecoration: "none" }}>
+                      {variation}
+                    </a>
+                  </div>
                 </div>
                 <div className="mobile-card-image">
                   <div className="mobile-image-col">
@@ -584,31 +609,15 @@ export default function Home() {
                     )}
                   </div>
                 </div>
-                <button
-                  className="ghost"
-                  onClick={() => {
-                    const next = new Set(expandedRows);
-                    if (next.has(variation)) next.delete(variation);
-                    else next.add(variation);
-                    setExpandedRows(next);
-                  }}
-                >
-                  {expandedRows.has(variation) ? "Hide Details" : "Show Details"}
-                </button>
-                {expandedRows.has(variation) && (
-                  <div className="mobile-card-details">
-                    {groupRows.map((item, idx) => (
-                      <div className="mobile-card-row" key={`${variation}-${idx}`}>
-                        {headers.map((h) => (
-                          <div className="mobile-card-field" key={h}>
-                            <div className="label">{h}</div>
-                            <div className="value">{item[h] ?? ""}</div>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* Show key fields inline */}
+                <div className="mobile-card-details" style={{ marginTop: 8 }}>
+                  {headers.filter((h) => h !== VARIATION_COLUMN).map((h) => (
+                    <div className="mobile-card-field" key={h}>
+                      <div className="label">{h}</div>
+                      <div className="value">{row[h] ?? ""}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })}
@@ -620,7 +629,20 @@ export default function Home() {
       <table className="results-table">
         <thead>
           <tr>
-            <th></th>
+            <th style={{ width: 36, textAlign: "center" }}>
+              <input
+                type="checkbox"
+                checked={sortedRows.length > 0 && selectedRows.size === sortedRows.length}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedRows(new Set(sortedRows.map((r) => r[VARIATION_COLUMN])));
+                  } else {
+                    setSelectedRows(new Set());
+                  }
+                }}
+                style={{ cursor: "pointer" }}
+              />
+            </th>
             {headers.map((h) => (
               <th
                 key={h}
@@ -649,76 +671,73 @@ export default function Home() {
             const img = images.find((i) => /_out\./i.test(i.name)) || images[0];
 
             return (
-              <Fragment key={variation}>
-                <tr>
-                  <td className="arrow-cell">
-                    {((currentPage - 1) * pageSize) + idx + 1}. {" "}
-                    <span
-                      className="row-toggle"
-                      onClick={() => {
-                        const next = new Set(expandedRows);
-                        if (next.has(variation)) next.delete(variation);
-                        else next.add(variation);
-                        setExpandedRows(next);
-                      }}
-                    >
-                      {expandedRows.has(variation) ? "▾" : "▸"}
-                    </span>
-                  </td>
-                  {headers.map((h) => (
-                    <td key={h} style={{ width: headerWidths[h], minWidth: headerWidths[h] }}>{row[h] ?? ""}</td>
-                  ))}
-                  <td className="thumb-wrap thumb-col">
-                    {img ? (
-                      <>
-                        <img
-                          src={img.url}
-                          alt={img.name}
-                          className="thumb"
-                          onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
-                        />
-                        <details className="download-menu" onClick={(e) => e.stopPropagation()}>
-                          <summary className="ghost download-trigger">Download ▾</summary>
-                          <div className="download-pop">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                downloadUrl(img.url, img.name);
-                                closeDownloadMenu(e.currentTarget);
-                              }}
-                            >
-                              First image
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                downloadAll(images);
-                                closeDownloadMenu(e.currentTarget);
-                              }}
-                            >
-                              All images
-                            </button>
-                          </div>
-                        </details>
-                      </>
+              <tr key={variation} style={{ background: selectedRows.has(variation) ? "rgba(0,180,216,0.06)" : undefined }}>
+                <td style={{ textAlign: "center", width: 36 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedRows.has(variation)}
+                    onChange={(e) => {
+                      setSelectedRows((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(variation);
+                        else next.delete(variation);
+                        return next;
+                      });
+                    }}
+                    style={{ cursor: "pointer" }}
+                  />
+                </td>
+                {headers.map((h) => (
+                  <td key={h} style={{ width: headerWidths[h], minWidth: headerWidths[h] }}>
+                    {h === VARIATION_COLUMN ? (
+                      <a href={`/products/${encodeURIComponent(variation)}`} style={{ color: "var(--cyan)", textDecoration: "none", fontWeight: 600 }}>
+                        {row[h] ?? ""}
+                      </a>
                     ) : (
-                      "—"
+                      row[h] ?? ""
                     )}
                   </td>
-                </tr>
-                {expandedRows.has(variation) &&
-                  groupRows.map((item, i) => (
-                    <tr key={`${variation}-${i}`} className="sub-row">
-                      <td className="thumb-col"></td>
-                      {headers.map((h) => (
-                        <td key={`${h}-${i}`} style={{ width: headerWidths[h], minWidth: headerWidths[h] }}>{item[h] ?? ""}</td>
-                      ))}
-                      <td></td>
-                    </tr>
-                  ))}
-              </Fragment>
+                ))}
+                <td className="thumb-wrap thumb-col">
+                  {img ? (
+                    <>
+                      <img
+                        src={img.url}
+                        alt={img.name}
+                        className="thumb"
+                        onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
+                      />
+                      <details className="download-menu" onClick={(e) => e.stopPropagation()}>
+                        <summary className="ghost download-trigger">Download ▾</summary>
+                        <div className="download-pop">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadUrl(img.url, img.name);
+                              closeDownloadMenu(e.currentTarget);
+                            }}
+                          >
+                            First image
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadAll(images);
+                              closeDownloadMenu(e.currentTarget);
+                            }}
+                          >
+                            All images
+                          </button>
+                        </div>
+                      </details>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
             );
           })}
         </tbody>
@@ -874,7 +893,19 @@ export default function Home() {
                   <option value="1000">1000</option>
                 </select>
                 <button className="primary" onClick={() => { setCurrentPage(1); runSearch(); }}>Search</button>
-                <button className="ghost" disabled={rows.length === 0} onClick={downloadCsv}>Export CSV</button>
+                <details className="export-dropdown">
+                  <summary className="ghost export-dropdown-trigger">
+                    Export ▾
+                  </summary>
+                  <div className="export-dropdown-menu">
+                    <button type="button" disabled={rows.length === 0} onClick={(e) => { exportAll(); (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; }}>
+                      Export All
+                    </button>
+                    <button type="button" disabled={selectedRows.size === 0} onClick={(e) => { exportSelected(); (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; }}>
+                      Export Selected{selectedRows.size > 0 ? ` (${selectedRows.size})` : ""}
+                    </button>
+                  </div>
+                </details>
               </div>
               <div className="pager">
                 <button className="ghost" disabled={currentPage <= 1} onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}>Prev</button>

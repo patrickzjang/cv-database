@@ -145,6 +145,10 @@ export default function InventoryPage() {
   const [alertSaving, setAlertSaving] = useState(false);
   const [adjustSaving, setAdjustSaving] = useState(false);
 
+  // JST Sync
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Fetch ──────────────────────────────────────────────────────────────────
@@ -163,9 +167,9 @@ export default function InventoryPage() {
 
       const res = await fetch(`/api/inventory?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: InventoryResponse = await res.json();
-      setItems(data.items ?? []);
-      setTotal(data.total ?? 0);
+      const json = await res.json();
+      setItems(json.data ?? json.items ?? []);
+      setTotal(json.total ?? 0);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load inventory");
       setItems([]);
@@ -296,16 +300,58 @@ export default function InventoryPage() {
     return sortDir === "asc" ? " \u2191" : " \u2193";
   };
 
+  // ─── JST Sync ───────────────────────────────────────────────────────────────
+
+  const syncFromJst = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/inventory/sync", { method: "POST" });
+      const json = await res.json();
+      if (json.ok) {
+        setSyncResult(`Synced ${json.rows} items from JST`);
+        fetchInventory();
+      } else {
+        setSyncResult(`Error: ${json.error}`);
+      }
+    } catch {
+      setSyncResult("Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="page">
       {/* Header */}
-      <div style={{ marginBottom: 8 }}>
-        <h1 className="grad-text" style={{ fontSize: "1.5rem" }}>
-          Inventory Management
-        </h1>
-        <p className="subtitle">Monitor stock levels, set alerts, and manage reorders</p>
+      <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1 className="grad-text" style={{ fontSize: "1.5rem" }}>
+            Inventory Management
+          </h1>
+          <p className="subtitle">Monitor stock levels, set alerts, and manage reorders</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {syncResult && (
+            <span style={{ fontSize: "0.82rem", color: syncResult.startsWith("Error") ? "var(--error)" : "var(--ok)" }}>
+              {syncResult}
+            </span>
+          )}
+          <button
+            className="ghost"
+            onClick={syncFromJst}
+            disabled={syncing}
+            style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5" />
+              <path d="M14 1v4h-4" /><path d="M2 15v-4h4" />
+            </svg>
+            {syncing ? "Syncing..." : "Sync from JST"}
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}

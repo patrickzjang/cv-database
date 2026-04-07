@@ -43,7 +43,22 @@ const PLATFORM_COLORS: Record<string, string> = {
   shopee: "#ee4d2d", lazada: "#0f136d", tiktok: "#000", shopify: "#96bf48",
 };
 
+type ImageRef = { name: string; url: string };
+
 /* ── Helpers ─────────────────────────────────────────────────────────── */
+function parseImages(row: MasterRow): ImageRef[] {
+  const imgs = (row as any).product_images;
+  if (!Array.isArray(imgs)) return [];
+  return imgs.map((url: string) => {
+    const clean = String(url).split("?")[0];
+    return { name: clean.split("/").pop() || clean, url: String(url) };
+  });
+}
+
+function findImage1(images: ImageRef[]): ImageRef | undefined {
+  return images.find((i) => /_1\./i.test(i.name)) || images[0];
+}
+
 function fmt(n?: number | null) {
   if (n == null) return "—";
   return n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
@@ -73,6 +88,9 @@ export default function ProductDetailPage() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("Info");
   const [toast, setToast] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [savedDesc, setSavedDesc] = useState("");
+  const [savingDesc, setSavingDesc] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -80,7 +98,12 @@ export default function ProductDetailPage() {
       const r = await fetch(`/api/products/${encodeURIComponent(sku)}`);
       const d = await r.json();
       if (d.error) setError(d.error);
-      else setData(d);
+      else {
+        setData(d);
+        const desc = (d.masterRows?.[0]?.DESCRIPTION as string) || "";
+        setEditDesc(desc);
+        setSavedDesc(desc);
+      }
     } catch { setError("Failed to load product"); }
     setLoading(false);
   }, [sku]);
@@ -131,6 +154,27 @@ export default function ProductDetailPage() {
     setToast(resp.ok ? "Uploaded to platform" : "Upload failed");
   }
 
+  async function saveDescription() {
+    if (!data) return;
+    setSavingDesc(true);
+    try {
+      const resp = await fetch(`/api/products/${encodeURIComponent(sku)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: data.brand, description: editDesc }),
+      });
+      if (resp.ok) {
+        setSavedDesc(editDesc);
+        setToast("Description saved");
+      } else {
+        setToast("Failed to save description");
+      }
+    } catch { setToast("Failed to save description"); }
+    setSavingDesc(false);
+  }
+
+  const mainImage = findImage1(parseImages(firstRow));
+
   return (
     <div className="page">
       {/* Toast */}
@@ -144,17 +188,29 @@ export default function ProductDetailPage() {
 
       {/* Header */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <h1 style={{ margin: 0, fontSize: "1.6rem" }}>{sku}</h1>
-              <Badge label={brand} color="#fff" bg="var(--app-accent)" />
-            </div>
-            <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.95rem" }}>{description}</p>
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+          {/* Main Image */}
+          <div style={{ flexShrink: 0, width: 180, height: 180, borderRadius: 12, overflow: "hidden", background: "var(--surface-2)", border: "1px solid var(--border-2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {mainImage ? (
+              <img src={mainImage.url} alt={mainImage.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            ) : (
+              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No image</span>
+            )}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="ghost" onClick={syncToJst} style={{ fontSize: "0.82rem" }}>Sync to JST</button>
-            <button className="primary" onClick={uploadToPlatform} style={{ fontSize: "0.82rem" }}>Upload to Platform</button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <h1 style={{ margin: 0, fontSize: "1.6rem" }}>{sku}</h1>
+                  <Badge label={brand} color="#fff" bg="var(--app-accent)" />
+                </div>
+                <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.95rem" }}>{description}</p>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="ghost" onClick={syncToJst} style={{ fontSize: "0.82rem" }}>Sync to JST</button>
+                <button className="primary" onClick={uploadToPlatform} style={{ fontSize: "0.82rem" }}>Upload to Platform</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -182,6 +238,33 @@ export default function ProductDetailPage() {
       {/* ═══ TAB: Info ═══ */}
       {tab === "Info" && (
         <div className="card">
+          {/* Editable Description */}
+          <div style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 8 }}>Product Description</h3>
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              rows={3}
+              placeholder="Enter product description..."
+              style={{ width: "100%", resize: "vertical", minHeight: 60, fontFamily: "inherit", fontSize: "0.93rem", padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border-2)", background: "#fff" }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <button
+                className="primary"
+                disabled={savingDesc || editDesc === savedDesc}
+                onClick={saveDescription}
+                style={{ fontSize: "0.82rem", padding: "8px 16px" }}
+              >
+                {savingDesc ? "Saving..." : "Save Description"}
+              </button>
+              {editDesc !== savedDesc && (
+                <button className="ghost" onClick={() => setEditDesc(savedDesc)} style={{ fontSize: "0.82rem", padding: "8px 16px" }}>
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+
           <h3 style={{ marginBottom: 12 }}>SKU Variants ({data.masterRows.length} sizes)</h3>
           <div style={{ overflowX: "auto" }}>
             <table className="results-table" style={{ width: "100%", fontSize: "0.85rem" }}>

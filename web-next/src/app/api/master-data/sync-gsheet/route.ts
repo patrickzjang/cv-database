@@ -3,18 +3,31 @@ import { isAuthenticated } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "@/lib/server-supabase";
 import { createClient } from "@supabase/supabase-js";
-import { deriveVariationSku } from "@/lib/sku-utils";
+import { deriveVariationSku, deriveSize } from "@/lib/sku-utils";
 import * as XLSX from "xlsx";
 
 const GSHEET_ID = "10WIc5xJHaPbZoCTHPY0jAe2BA_2VkvH_jALTgZJ1-54";
 const BRAND_SHEETS = ["DAYBREAK", "PAN", "HEELCARE", "ARENA"] as const;
 
+// SKU sheets for platform mappings (replaces brand sheet col N-U which had formulas)
+const SKU_SHEETS = ["DB_SKU", "PN_SKU", "JN_SKU", "HC_SKU", "AN_SKU"] as const;
+const SKU_BRAND_MAP: Record<string, string> = {
+  DB_SKU: "DB",
+  PN_SKU: "PN",
+  JN_SKU: "JN",
+  HC_SKU: "HC",
+  AN_SKU: "AN",
+};
+
 /**
  * POST /api/master-data/sync-gsheet
  *
- * Downloads the Google Sheet, parses brand sheets (col A:J) + COL sheets,
- * then upserts into core.sku_pricing + core.pricing_rules.
- * The old core.master_* tables are archived (not deleted).
+ * Downloads the Google Sheet and parses:
+ *  - Brand sheets (col A:M) → core.sku_pricing (product master data)
+ *  - _SKU sheets (DB_SKU, PN_SKU, etc.) → core.platform_sku_mapping
+ *
+ * Brand sheets have NO formulas — all data pushed from system only.
+ * Pricing columns (W:AH) are managed in Pricing Rules UI.
  */
 export async function POST(req: NextRequest) {
   if (!(await isAuthenticated(req)))
@@ -34,9 +47,12 @@ export async function POST(req: NextRequest) {
 
     const stats = { pricing: 0, rules: 0, errors: [] as string[] };
 
-    // 2. Parse brand sheets col A:J (product data) + col N:U (platform IDs)
+    // 2. Parse brand sheets col A:M (product master data only)
+    // A=brand, B=group, C=parents_sku, D=item_sku, E=description, F=UPC,
+    // G=price_tag, H=cogs_ex_vat, I=vat, J=cogs_inc_vat, K=category, L=collection, M=size
+    // Brand sheets have NO formulas — all data pushed from system
+    // Platform IDs come from _SKU sheets (step 2b)
     // Pricing columns (W:AH) are NOT synced — managed in Pricing Rules UI only
-    // COL sheets are NOT synced — one-time import only
     const pricingRows: Record<string, unknown>[] = [];
     const platformMappingRows: Record<string, unknown>[] = [];
 
@@ -56,7 +72,14 @@ export async function POST(req: NextRequest) {
 
         const variationSku = deriveVariationSku(brand, itemSku, parentsSku);
 
-        // Only sync col A:J (product master data) — prices are managed in the system
+        const upc = String(r[5] || "").trim();
+
+        const category = String(r[10] || "").trim();   // K: Category
+        const collection = String(r[11] || "").trim(); // L: Collection
+        // M: SIZE — derived from ITEM_SKU using regex (replaces Sheet formula)
+        const size = deriveSize(itemSku);
+
+        // Sync col A:M (product master data) — prices are managed in the system
         pricingRows.push({
           item_sku: itemSku,
           variation_sku: variationSku,
@@ -64,40 +87,45 @@ export async function POST(req: NextRequest) {
           brand,
           group_code: groupCode,
           description,
+          upc: upc || null,
           price_tag: Number(r[6]) || null,
           cogs_ex_vat: Number(r[7]) || null,
           vat: Number(r[8]) || null,
           cogs_inc_vat: Number(r[9]) || null,
+          category: category || null,
+          collection: collection || null,
+          size: size || null,
         });
+      }
+    }
 
-        // Platform IDs from brand sheet col N-U (13-20)
-        // N=13: Shopee Product ID, O=14: Shopee SKU ID
-        // P=15: Lazada Product ID, Q=16: Lazada SKU ID
-        // R=17: TTS Product ID,    S=18: TTS SKU ID
-        // T=19: Shopify Product ID, U=20: Shopify SKU ID
-        const platformCols: [string, number, number][] = [
-          ["shopee", 13, 14],
-          ["lazada", 15, 16],
-          ["tiktok", 17, 18],
-          ["shopify", 19, 20],
-        ];
-        for (const [platform, pidCol, skuCol] of platformCols) {
-          const rawPid = r[pidCol];
-          const rawSid = r[skuCol];
-          // Convert to string — handle 0 (number) properly
-          const pid = rawPid != null && rawPid !== "" ? String(rawPid) : "";
-          const sid = rawSid != null && rawSid !== "" ? String(rawSid) : "";
-          // Skip only #N/A or truly empty
-          if (pid === "#N/A" || pid === "") continue;
-          platformMappingRows.push({
-            item_sku: itemSku,
-            brand,
-            platform,
-            platform_sku: itemSku,
-            platform_product_id: pid,
-            platform_option_id: sid !== "#N/A" ? sid : "",
-          });
-        }
+    // 2b. Parse _SKU sheets for platform mappings (single source of truth)
+    // Sheets: DB_SKU, PN_SKU, JN_SKU, HC_SKU, AN_SKU
+    // Columns: ITEM_SKU, PLATFORM, PLATFORM_SKU, PLATFORM_PRODUCT_ID, PLATFORM_OPTION_ID
+    for (const skuSheet of SKU_SHEETS) {
+      const ws = wb.Sheets[skuSheet];
+      if (!ws) continue;
+      const brand = SKU_BRAND_MAP[skuSheet] || "";
+      const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      for (const r of rows) {
+        const itemSku = String(r.ITEM_SKU ?? r.item_sku ?? "").trim();
+        const platform = String(r.PLATFORM ?? r.platform ?? "").trim().toLowerCase();
+        if (!itemSku || !platform) continue;
+
+        const pid = String(r.PLATFORM_PRODUCT_ID ?? r.platform_product_id ?? "").trim();
+        const sid = String(r.PLATFORM_OPTION_ID ?? r.platform_option_id ?? "").trim();
+        // Skip #N/A or empty product IDs
+        if (!pid || pid === "#N/A") continue;
+
+        platformMappingRows.push({
+          item_sku: itemSku,
+          brand,
+          platform,
+          platform_sku: String(r.PLATFORM_SKU ?? r.platform_sku ?? itemSku).trim(),
+          platform_product_id: pid,
+          platform_option_id: sid !== "#N/A" ? sid : "",
+        });
       }
     }
 
@@ -120,7 +148,7 @@ export async function POST(req: NextRequest) {
       else stats.pricing += batch.length;
     }
 
-    // 2b. Upsert platform_sku_mapping (from brand sheets col N-U only — single source of truth)
+    // Upsert platform_sku_mapping (from _SKU sheets — single source of truth)
     // Deduplicate by (item_sku, platform)
     const mappingDeduped = new Map<string, Record<string, unknown>>();
     for (const row of platformMappingRows) {

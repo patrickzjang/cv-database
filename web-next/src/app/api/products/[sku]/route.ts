@@ -7,19 +7,54 @@ import {
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   requireServerConfig,
-  supabaseRestGet,
-  buildInFilter,
 } from "@/lib/server-supabase";
-import { BRAND_VIEWS, VARIATION_COLUMN } from "@/lib/config";
 
-// ─── Brand detection from master tables ─────────────────────────────────────
+// ─── PATCH /api/products/[sku] — update description ────────────────────────
 
-const BRAND_TABLE_MAP: Record<string, string> = {
-  PAN: "master_pan",
-  ARENA: "master_arena",
-  DAYBREAK: "master_daybreak",
-  HEELCARE: "master_heelcare",
-};
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ sku: string }> }
+) {
+  try {
+    if (isMaintenanceMode()) {
+      return NextResponse.json({ error: "Maintenance mode." }, { status: 503 });
+    }
+    if (!isAuthenticated(req)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    requireServerConfig();
+
+    const { sku } = await params;
+    const variationSku = decodeURIComponent(sku).trim();
+    const body = await req.json().catch(() => ({}));
+    const brand = String(body.brand || "").toUpperCase();
+    const description = body.description;
+
+    if (typeof description !== "string") {
+      return NextResponse.json({ error: "description is required" }, { status: 400 });
+    }
+
+    // Update description in sku_pricing (single source of truth)
+    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+
+    const { error } = await sb
+      .schema("core")
+      .from("sku_pricing")
+      .update({ description })
+      .eq("variation_sku", variationSku);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
 
 // ─── GET /api/products/[sku] ────────────────────────────────────────────────
 
@@ -61,44 +96,7 @@ export async function GET(
       auth: { persistSession: false },
     });
 
-    // ─── 1. Master data: query all 4 brand tables ──────────────────────────
-    let masterRows: Record<string, unknown>[] = [];
-    let detectedBrand = "";
-
-    const brandQueries = Object.entries(BRAND_TABLE_MAP).map(
-      async ([brand, table]) => {
-        const { data, error } = await supabase
-          .schema("core")
-          .from(table)
-          .select("*")
-          .eq(VARIATION_COLUMN, variationSku);
-
-        if (error) {
-          console.warn(`[product-detail] Error querying ${table}:`, error.message);
-          return { brand, rows: [] as Record<string, unknown>[] };
-        }
-        return {
-          brand,
-          rows: (data || []) as Record<string, unknown>[],
-        };
-      }
-    );
-
-    const brandResults = await Promise.all(brandQueries);
-    for (const result of brandResults) {
-      if (result.rows.length > 0) {
-        masterRows = result.rows;
-        detectedBrand = result.brand;
-        break;
-      }
-    }
-
-    // Extract ITEM_SKUs from master data
-    const itemSkus = masterRows
-      .map((r) => String(r.ITEM_SKU || ""))
-      .filter(Boolean);
-
-    // ─── 2. Pricing ────────────────────────────────────────────────────────
+    // ─── 1. All product data from sku_pricing (single source of truth from Google Sheet)
     const { data: pricingData, error: pricingError } = await supabase
       .schema("core")
       .from("sku_pricing")
@@ -111,7 +109,26 @@ export async function GET(
     }
     const pricing = (pricingData || []) as Record<string, unknown>[];
 
-    // ─── 3. Platform mappings ──────────────────────────────────────────────
+    // Build masterRows from sku_pricing for backward compatibility with frontend
+    const detectedBrand = pricing.length > 0 ? String(pricing[0].brand || "") : "";
+    const masterRows = pricing.map((r) => ({
+      ITEM_SKU: r.item_sku,
+      VARIATION_SKU: r.variation_sku,
+      PARENTS_SKU: r.parents_sku,
+      BRAND: r.brand,
+      DESCRIPTION: r.description,
+      UPC: r.upc ?? "",
+      "Price Tag": r.price_tag ?? r.rrp,
+      "COGs (Inc.Vat)": r.cogs_inc_vat,
+      Category: r.group_code,
+      Collection: null,
+    }));
+
+    const itemSkus = pricing
+      .map((r) => String(r.item_sku || ""))
+      .filter(Boolean);
+
+    // ─── 2. Platform mappings ──────────────────────────────────────────────
     let platformMappings: Record<string, unknown>[] = [];
     if (itemSkus.length > 0) {
       const { data: pmData, error: pmError } = await supabase

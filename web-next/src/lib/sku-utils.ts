@@ -34,6 +34,22 @@ export function extractSize(itemSku: string, variationSku: string): string {
   return suffix.replace(/^-/, "");
 }
 
+/**
+ * Derive SIZE from ITEM_SKU using regex — replicates Google Sheet formula:
+ * REGEXEXTRACT(ITEM_SKU, "F$|S$|M$|L$|XL$|2XL$|3XL$|...|\\d{2}$")
+ *
+ * Matches from the END of the SKU string. Order matters:
+ * longer patterns first to avoid partial matches (e.g. 4XL before XL).
+ */
+export function deriveSize(itemSku: string): string {
+  if (!itemSku) return "";
+  // Try patterns from longest to shortest to avoid partial matches
+  const match = itemSku.match(
+    /(?:4XL|3XL|2XL|XL|F|S|M|L|9\.5|8\.5|7\.5|6\.5|5\.5|4\.5|3\.5|2\.5|1\.5|\d{2}|\d)$/
+  );
+  return match ? match[0] : "";
+}
+
 /** Brand code to full name mapping */
 export const BRAND_MAP: Record<string, string> = {
   DB: "DAYBREAK",
