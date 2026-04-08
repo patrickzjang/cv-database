@@ -37,6 +37,21 @@ export async function POST(req: NextRequest) {
     }
 
     if (!bucket || !key) {
+      // For video assets without R2 files, use Cloudflare Stream download URL
+      if (asset.stream_uid && asset.asset_type === "video") {
+        const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || "";
+        const STREAM_TOKEN = process.env.CLOUDFLARE_STREAM_API_TOKEN || "";
+        const dlUrl = `https://customer-${ACCOUNT_ID.slice(0, 20)}.cloudflarestream.com/${asset.stream_uid}/downloads/default.mp4`;
+        // Try to get download URL from Stream API
+        const streamRes = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream/${asset.stream_uid}/downloads`,
+          { method: "POST", headers: { Authorization: `Bearer ${STREAM_TOKEN}` } }
+        );
+        const streamJson = await streamRes.json().catch(() => null);
+        const streamDlUrl = streamJson?.result?.default?.url;
+        await logEvent(assetId, `downloaded_stream`, body._actor ?? null, { stream_uid: asset.stream_uid });
+        return NextResponse.json({ url: streamDlUrl || dlUrl });
+      }
       return NextResponse.json({ error: `No ${type} file available` }, { status: 404 });
     }
 

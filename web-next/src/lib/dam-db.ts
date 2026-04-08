@@ -1,6 +1,6 @@
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "@/lib/server-supabase";
 
-const SCHEMA = "dam";
+const SCHEMA = "public";
 
 function damHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
@@ -78,7 +78,7 @@ export async function listAssets(filters: {
   if (filters.q)          params.set("sku",          `ilike.${filters.q.trim()}%`);
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/assets?${params.toString()}`,
+    `${SUPABASE_URL}/rest/v1/dam_assets?${params.toString()}`,
     {
       headers: {
         ...damHeaders({ Prefer: "count=exact" }),
@@ -99,7 +99,7 @@ export async function listAssets(filters: {
 
 export async function getAsset(id: string): Promise<DamAsset | null> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/assets?id=eq.${id}&limit=1`,
+    `${SUPABASE_URL}/rest/v1/dam_assets?id=eq.${id}&limit=1`,
     { headers: damHeaders(), cache: "no-store" }
   );
   if (!res.ok) throw new Error(await res.text());
@@ -108,7 +108,7 @@ export async function getAsset(id: string): Promise<DamAsset | null> {
 }
 
 export async function createAsset(input: CreateAssetInput): Promise<DamAsset> {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/assets`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/dam_assets`, {
     method: "POST",
     headers: damHeaders({ Prefer: "return=representation" }),
     body: JSON.stringify(input),
@@ -119,7 +119,7 @@ export async function createAsset(input: CreateAssetInput): Promise<DamAsset> {
 }
 
 export async function updateAsset(id: string, patch: UpdateAssetInput): Promise<DamAsset> {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/assets?id=eq.${id}`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/dam_assets?id=eq.${id}`, {
     method: "PATCH",
     headers: damHeaders({ Prefer: "return=representation" }),
     body: JSON.stringify(patch),
@@ -137,7 +137,7 @@ export async function logEvent(
   actor: string | null,
   metadata: Record<string, unknown> = {}
 ): Promise<void> {
-  await fetch(`${SUPABASE_URL}/rest/v1/asset_events`, {
+  await fetch(`${SUPABASE_URL}/rest/v1/dam_asset_events`, {
     method: "POST",
     headers: damHeaders(),
     body: JSON.stringify({ asset_id: assetId, event, actor, metadata }),
@@ -146,7 +146,7 @@ export async function logEvent(
 
 export async function getAssetEvents(assetId: string) {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/asset_events?asset_id=eq.${assetId}&order=created_at.asc`,
+    `${SUPABASE_URL}/rest/v1/dam_asset_events?asset_id=eq.${assetId}&order=created_at.asc`,
     { headers: damHeaders(), cache: "no-store" }
   );
   if (!res.ok) throw new Error(await res.text());

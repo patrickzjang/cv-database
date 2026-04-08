@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       synced_at: new Date().toISOString(),
       rows: json.totalInserted ?? 0,
       pages: json.pagesFetched ?? 0,
+      warehouses: json.warehouses ?? [],
       message: json.message,
     });
   } catch (e: any) {

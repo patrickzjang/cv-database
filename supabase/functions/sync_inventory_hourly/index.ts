@@ -7,8 +7,16 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
 
 const WINDOW_HOURS = readPositiveInt("SYNC_WINDOW_HOURS", 24);
-const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 100);
+const PAGE_SIZE = readPositiveInt("SYNC_PAGE_SIZE", 500);
 const MAX_PAGES = readPositiveInt("SYNC_MAX_PAGES", 1000);
+
+// ---------- WAREHOUSE MAP ----------
+const WAREHOUSES = [
+  { id: 14132, name: "WICE_BA_A" },
+  { id: 14421, name: "WICE_PAF_A" },
+  { id: 14419, name: "WICE_WBLP_A" },
+  { id: 14422, name: "WICE_WBLP_B" },
+];
 
 // ---------- MAIN ----------
 serve(async (_req) => {
@@ -44,75 +52,114 @@ serve(async (_req) => {
       });
     }
 
-    // 2) Paginate GetSkuinventorys
-    let pageIndex = 1;
-    let pagesFetched = 0;
     let totalInserted = 0;
-    const fromUnix = toUnixSeconds(fromTime);
-    const toUnix = toUnixSeconds(toTime);
+    let totalPagesFetched = 0;
+    const warehouseResults: Record<string, number> = {};
 
-    while (true) {
-      if (pagesFetched >= MAX_PAGES) {
-        throw new Error(`GetSkuinventorys exceeded MAX_PAGES=${MAX_PAGES}`);
+    // If total gap > 3 days, iterate month-by-month for full catch-up
+    const gapDays = (now.getTime() - fromTime.getTime()) / (1000 * 60 * 60 * 24);
+    const isFullSync = gapDays > 3;
+
+    // Build time windows
+    const windows: { from: Date; to: Date }[] = [];
+    if (isFullSync) {
+      console.log(`Full sync mode (gap=${gapDays.toFixed(1)} days) — iterating month-by-month from 2024`);
+      let cursor = new Date("2024-01-01T00:00:00Z");
+      while (cursor < now) {
+        const nextMonth = new Date(cursor);
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        const windowEnd = nextMonth > now ? now : nextMonth;
+        windows.push({ from: cursor, to: windowEnd });
+        cursor = nextMonth;
       }
-
-      const body = {
-        requestModel: {
-          modifiedBegin: fromUnix,
-          modifiedEnd: toUnix,
-        },
-        dataPage: {
-          pageSize: PAGE_SIZE,
-          pageIndex,
-        },
-      };
-
-      const json = await callJst("/api/Inventory/GetSkuinventorys", body);
-      const list = extractListFromData(json);
-      pagesFetched += 1;
-
-      console.log(
-        `GetSkuinventorys ${fromTime.toISOString()} - ${toTime.toISOString()}, page ${pageIndex}, got ${list.length}`,
-      );
-
-      if (!Array.isArray(list) || list.length === 0) break;
-
-      // 3) Map to inventory_raw rows
-      // JST actual fields: skuId, itemId, qty, orderLock, defectiveQty, returnQty, purchaseQty, virtualQty
-      const rows = list.map((inv: any) => ({
-        sku_id:         inv.skuId ?? inv.sku_id ?? "",
-        sku_code:       inv.skuCode ?? inv.skuId ?? "",
-        item_id:        inv.itemId ?? inv.item_id ?? "",
-        item_name:      inv.itemName ?? inv.item_name ?? null,
-        warehouse_id:   inv.warehouseId ?? inv.warehouse_id ?? 0,
-        warehouse_name: inv.warehouseName ?? inv.warehouse_name ?? null,
-        available_qty:  inv.qty ?? inv.availableQty ?? 0,
-        actual_qty:     (inv.qty ?? 0) + (inv.orderLock ?? 0),
-        defective_qty:  inv.defectiveQty ?? inv.defective_qty ?? 0,
-        locked_qty:     inv.orderLock ?? inv.lockedQty ?? 0,
-        cost_price:     inv.costPrice ?? inv.cost_price ?? null,
-        raw_json:       inv,
-        synced_at:      now.toISOString(),
-      }));
-
-      // 4) Upsert on (sku_id, warehouse_id)
-      const upsertResp = await supabase
-        .schema("jst_raw")
-        .from("inventory_raw")
-        .upsert(rows, { onConflict: "sku_id,warehouse_id" });
-
-      if (upsertResp.error) {
-        throw new Error(`upsert inventory_raw: ${upsertResp.error.message}`);
-      }
-
-      totalInserted += rows.length;
-
-      if (list.length < PAGE_SIZE) break;
-      pageIndex += 1;
+    } else {
+      windows.push({ from: fromTime, to: toTime });
     }
 
-    // 5) Daily snapshot: insert into inventory_history if today's snapshot doesn't exist
-    const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    // 2) GetWarehouseSkuInventorys per warehouse × per time window
+    for (const wh of WAREHOUSES) {
+      let whInserted = 0;
+
+      for (const win of windows) {
+        let pageIndex = 1;
+        const wFromUnix = toUnixSeconds(win.from);
+        const wToUnix = toUnixSeconds(win.to);
+
+        while (true) {
+          if (totalPagesFetched >= MAX_PAGES) {
+            console.warn(`Reached MAX_PAGES=${MAX_PAGES}, stopping`);
+            break;
+          }
+
+          const body = {
+            requestModel: {
+              warehouseId: wh.id,
+              modifiedBegin: wFromUnix,
+              modifiedEnd: wToUnix,
+            },
+            dataPage: {
+              pageSize: PAGE_SIZE,
+              pageIndex,
+            },
+          };
+
+          let json: any;
+          try {
+            json = await callJst("/api/Inventory/GetWarehouseSkuInventorys", body);
+          } catch (e: any) {
+            console.error(`GetWarehouseSkuInventorys failed for WH=${wh.name}: ${e.message}`);
+            dbErrors.push(`WH=${wh.name}: ${e.message}`);
+            break;
+          }
+
+          const list = extractListFromData(json);
+          totalPagesFetched += 1;
+
+          if (pageIndex === 1 && list.length > 0) {
+            console.log(`WH=${wh.name} ${win.from.toISOString().slice(0,7)} page ${pageIndex}, got ${list.length}`);
+          }
+
+          if (!Array.isArray(list) || list.length === 0) break;
+
+          const rows = list.map((inv: any) => ({
+            sku_id:         String(inv.skuId ?? inv.sku_id ?? ""),
+            sku_code:       String(inv.skuCode ?? inv.skuId ?? ""),
+            item_id:        String(inv.itemId ?? inv.item_id ?? ""),
+            item_name:      inv.itemName ?? inv.skuName ?? inv.item_name ?? null,
+            warehouse_id:   inv.wmsCoId ?? inv.warehouseId ?? wh.id,
+            warehouse_name: inv.wmsCoName ?? inv.warehouseName ?? wh.name,
+            available_qty:  inv.qty ?? inv.availableQty ?? 0,
+            actual_qty:     (inv.qty ?? 0) + (inv.orderLock ?? 0),
+            defective_qty:  inv.defectiveQty ?? inv.defective_qty ?? 0,
+            locked_qty:     inv.orderLock ?? inv.lockedQty ?? 0,
+            cost_price:     inv.costPrice ?? inv.cost_price ?? null,
+            raw_json:       inv,
+            synced_at:      now.toISOString(),
+          }));
+
+          const upsertResp = await supabase
+            .schema("jst_raw")
+            .from("inventory_raw")
+            .upsert(rows, { onConflict: "sku_id,warehouse_id" });
+
+          if (upsertResp.error) {
+            throw new Error(`upsert inventory_raw WH=${wh.name}: ${upsertResp.error.message}`);
+          }
+
+          whInserted += rows.length;
+          totalInserted += rows.length;
+
+          if (list.length < PAGE_SIZE) break;
+          pageIndex += 1;
+        }
+      }
+
+      warehouseResults[wh.name] = whInserted;
+      console.log(`WH=${wh.name}: ${whInserted} rows synced`);
+    }
+
+    // 3) Daily snapshot
+    const today = now.toISOString().slice(0, 10);
 
     const snapshotCheck = await supabase
       .schema("jst_raw")
@@ -125,7 +172,6 @@ serve(async (_req) => {
     if (!snapshotCheck.data) {
       console.log(`No snapshot for ${today} yet, creating inventory_history snapshot...`);
 
-      // Read all current inventory_raw rows for the snapshot
       const { data: currentInventory, error: invError } = await supabase
         .schema("jst_raw")
         .from("inventory_raw")
@@ -149,7 +195,6 @@ serve(async (_req) => {
           cost_price:     r.cost_price,
         }));
 
-        // Insert in batches to avoid payload limits
         const BATCH_SIZE = 500;
         for (let i = 0; i < historyRows.length; i += BATCH_SIZE) {
           const batch = historyRows.slice(i, i + BATCH_SIZE);
@@ -165,15 +210,13 @@ serve(async (_req) => {
 
         console.log(`Inserted ${historyRows.length} inventory_history rows for ${today}`);
       }
-    } else {
-      console.log(`Snapshot for ${today} already exists, skipping.`);
     }
 
-    // 6) Update sync state -- only on success
+    // 4) Update sync state
     const updateResp = await supabase
       .schema("jst_raw")
       .from("sync_state_inventory")
-      .update({ last_synced_at: toTime.toISOString() })
+      .update({ last_synced_at: (isFullSync ? now : toTime).toISOString() })
       .eq("id", 1);
 
     if (updateResp.error) {
@@ -185,9 +228,9 @@ serve(async (_req) => {
         message: "inventory sync done",
         fromTime,
         toTime,
-        pagesFetched,
+        pagesFetched: totalPagesFetched,
         totalInserted,
-        snapshotDate: today,
+        warehouseResults,
         dbErrors,
       }),
       { status: 200 },

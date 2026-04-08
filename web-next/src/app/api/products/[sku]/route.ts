@@ -146,8 +146,7 @@ export async function GET(
 
     // ─── 4. DAM assets ─────────────────────────────────────────────────────
     const { data: damData, error: damError } = await supabase
-      .schema("dam")
-      .from("assets")
+      .from("dam_assets")
       .select("*")
       .eq("sku", variationSku)
       .order("created_at", { ascending: false });

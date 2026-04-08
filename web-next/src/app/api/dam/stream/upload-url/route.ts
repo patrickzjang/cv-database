@@ -49,6 +49,14 @@ export async function POST(req: NextRequest) {
     // Extract UID from location header or stream-media-id
     const uid = res.headers.get("stream-media-id") || location.split("/").pop()?.split("?")[0] || "";
 
+    // Auto-enable downloads for this video (fire and forget)
+    if (uid) {
+      fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream/${uid}/downloads`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${STREAM_TOKEN}` },
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ uid, uploadURL: location });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

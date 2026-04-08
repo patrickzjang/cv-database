@@ -762,6 +762,38 @@ select option { background: #fff; color: var(--text); }
 .thumb-card button { padding: 6px 10px; font-size: 0.82rem; }
 
 /* ─── Download menu ──────────────────────────────────────────────────────────*/
+/* Export dropdown (Search Products page) */
+.export-dropdown { position: relative; display: inline-block; }
+.export-dropdown-trigger { list-style: none; cursor: pointer; user-select: none; }
+.export-dropdown-trigger::-webkit-details-marker { display: none; }
+.export-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border-2);
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+  display: none;
+  z-index: 10;
+}
+.export-dropdown[open] .export-dropdown-menu { display: block; }
+.export-dropdown-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.export-dropdown-menu button:hover { background: var(--surface-2); }
+.export-dropdown-menu button:disabled { opacity: 0.4; cursor: default; }
+
 .download-menu { position: relative; }
 
 .download-trigger { list-style: none; padding: 2px 8px; font-size: 0.65rem; line-height: 1.2; user-select: none; }

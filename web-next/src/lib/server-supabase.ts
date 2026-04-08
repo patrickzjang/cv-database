@@ -1,7 +1,3 @@
-import { BRAND_VIEWS, BRAND_VARIATION_VIEWS } from "@/lib/config";
-
-export type Brand = keyof typeof BRAND_VIEWS;
-
 export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
@@ -9,16 +5,6 @@ export function requireServerConfig() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   }
-}
-
-export function getTablesForBrand(brand: string) {
-  const key = (brand || "PAN").toUpperCase() as Brand;
-  const viewName = BRAND_VIEWS[key] || BRAND_VIEWS.PAN;
-  const variationView = BRAND_VARIATION_VIEWS[key] || BRAND_VARIATION_VIEWS.PAN;
-  return {
-    viewTable: viewName.includes(".") ? viewName.split(".")[1] : viewName,
-    variationTable: variationView.includes(".") ? variationView.split(".")[1] : variationView,
-  };
 }
 
 export function parseCount(header: string | null): number {
@@ -86,4 +72,3 @@ export async function supabaseRestGet(
 
   return { data, count: countMode === "none" ? 0 : parseCount(res.headers.get("content-range")) };
 }
-

@@ -109,16 +109,6 @@ function IconPlatformFee() {
   );
 }
 
-function IconStockAlert() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10 3 L18 16 L2 16 Z" />
-      <path d="M10 9 L10 12" />
-      <circle cx="10" cy="14" r="0.5" fill="currentColor" />
-    </svg>
-  );
-}
-
 function IconCollapse() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -198,7 +188,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Settings",
     items: [
       { href: "/settings/platform-fees", label: "Platform Fees", icon: <IconPlatformFee /> },
-      { href: "/settings/alerts",        label: "Stock Alerts",  icon: <IconStockAlert /> },
     ],
   },
 ];

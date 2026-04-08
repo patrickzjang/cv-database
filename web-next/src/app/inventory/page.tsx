@@ -8,83 +8,73 @@ type InventoryItem = {
   sku_id: string;
   sku_code: string;
   item_name: string;
-  warehouse_id: number;
-  warehouse_name: string;
+  brand: string | null;
   available_qty: number;
   actual_qty: number;
   locked_qty: number;
   defective_qty: number;
-  min_stock: number;
-  reorder_qty: number;
-  lead_days: number;
   cost_price: number;
+  rsp: number | null;
+  rrp: number | null;
   avg_daily_sales: number | null;
+  warehouse: string | null;
+  stock_status: string;
+  reorder_config: { min_stock: number; reorder_qty: number; lead_days: number } | null;
 };
 
-type InventoryResponse = {
-  items: InventoryItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
-
-type AlertConfig = {
-  sku_id: string;
-  sku_code: string;
-  min_stock: number;
-  reorder_qty: number;
-  lead_days: number;
-};
-
-type SortKey =
-  | "sku_code"
-  | "item_name"
-  | "warehouse_name"
-  | "available_qty"
-  | "actual_qty"
-  | "locked_qty"
-  | "defective_qty"
-  | "min_stock"
-  | "days_left";
-
+type SortKey = "sku_code" | "item_name" | "brand" | "available_qty" | "days_left" | "avg_daily_sales";
 type SortDir = "asc" | "desc";
+type AlertLevel = "critical" | "urgent" | "warning";
+
+type AlertItem = InventoryItem & { alert_level: AlertLevel; days_left: number | null };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function fmt(n: number | null | undefined): string {
-  if (n == null) return "\u2013";
-  return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "\u2013";
   return n.toLocaleString("th-TH");
 }
 
-function stockStatus(item: InventoryItem): "ok" | "low" | "out" {
-  if (item.available_qty === 0) return "out";
-  if (item.available_qty <= item.min_stock) return "low";
-  return "ok";
-}
-
-function daysLeft(item: InventoryItem): number | null {
+function calcDaysLeft(item: InventoryItem): number | null {
   if (!item.avg_daily_sales || item.avg_daily_sales <= 0) return null;
   return Math.round(item.available_qty / item.avg_daily_sales);
 }
 
-function downloadCsv(rows: InventoryItem[]) {
-  const header = "SKU,Current Stock,Min Stock,Suggested Reorder Qty,Lead Days\n";
-  const body = rows
-    .map(
-      (r) =>
-        `"${r.sku_code}",${r.available_qty},${r.min_stock},${r.reorder_qty || r.min_stock * 2},${r.lead_days || 7}`
-    )
+function getMinStock(item: InventoryItem): number {
+  return item.reorder_config?.min_stock ?? 0;
+}
+
+function getLeadDays(item: InventoryItem): number {
+  return item.reorder_config?.lead_days ?? 7;
+}
+
+function classifyAlert(item: InventoryItem): AlertLevel | null {
+  const sales = item.avg_daily_sales ?? 0;
+  const dl = calcDaysLeft(item);
+  const lead = getLeadDays(item);
+
+  // Critical: out of stock with demand
+  if (item.available_qty <= 0 && sales > 0) return "critical";
+  // Urgent: will run out before reorder arrives, meaningful sales
+  if (dl != null && dl <= lead && sales > 1) return "urgent";
+  // Warning: within 2x lead time buffer, some sales
+  if (dl != null && dl <= lead * 2 && sales > 0.5) return "warning";
+  return null;
+}
+
+function downloadAlertsCsv(alerts: AlertItem[]) {
+  const header = "Alert Level,SKU,Item Name,Brand,Available,Avg Daily Sales,Days Left,Lead Days,Suggested Order Qty\n";
+  const body = alerts
+    .map((r) => {
+      const reorderQty = r.reorder_config?.reorder_qty || Math.max(10, Math.ceil((r.avg_daily_sales ?? 0) * getLeadDays(r) * 1.5));
+      return `"${r.alert_level}","${r.sku_code}","${(r.item_name || "").replace(/"/g, '""')}","${r.brand || ""}",${r.available_qty},${r.avg_daily_sales?.toFixed(1) ?? ""},${r.days_left ?? ""},${getLeadDays(r)},${reorderQty}`;
+    })
     .join("\n");
   const blob = new Blob([header + body], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `reorder-list-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `stock-alerts-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -93,42 +83,65 @@ function downloadCsv(rows: InventoryItem[]) {
 
 const BRANDS = ["ALL", "DAYBREAK", "PAN", "HEELCARE", "ARENA"] as const;
 const WAREHOUSES = [
-  { id: 0, name: "All Warehouses" },
-  { id: 1, name: "Main Warehouse" },
-  { id: 2, name: "Secondary Warehouse" },
-  { id: 3, name: "Returns Warehouse" },
+  { value: "", label: "All Warehouses" },
+  { value: "WICE_BA_A", label: "WICE_BA_A" },
+  { value: "WICE_PAF_A", label: "WICE_PAF_A" },
+  { value: "WICE_WBLP_A", label: "WICE_WBLP_A" },
+  { value: "WICE_WBLP_B", label: "WICE_WBLP_B" },
 ];
-const STOCK_STATUSES = ["all", "low", "out"] as const;
-const PAGE_SIZE = 50;
+const STOCK_STATUSES = [
+  { value: "all", label: "All Stock" },
+  { value: "low_stock", label: "Low Stock" },
+  { value: "out_of_stock", label: "Out of Stock" },
+];
+const PAGE_SIZES = [50, 100, 200, 500, 1000] as const;
+
+const ALERT_STYLES: Record<AlertLevel, { bg: string; color: string; border: string; label: string }> = {
+  critical: { bg: "rgba(220,38,38,0.08)", color: "var(--error)", border: "rgba(220,38,38,0.25)", label: "Critical" },
+  urgent:   { bg: "rgba(217,119,6,0.08)", color: "var(--warn)",  border: "rgba(217,119,6,0.25)", label: "Urgent" },
+  warning:  { bg: "rgba(234,179,8,0.08)", color: "#b45309",      border: "rgba(234,179,8,0.25)", label: "Warning" },
+};
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; border: string; label: string }> = {
-  ok:  { bg: "rgba(5,150,105,0.08)",  color: "var(--ok)",    border: "rgba(5,150,105,0.25)", label: "In Stock" },
-  low: { bg: "rgba(217,119,6,0.08)",  color: "var(--warn)",  border: "rgba(217,119,6,0.25)", label: "Low Stock" },
-  out: { bg: "rgba(220,38,38,0.08)",  color: "var(--error)", border: "rgba(220,38,38,0.25)", label: "Out of Stock" },
+  normal:       { bg: "rgba(5,150,105,0.08)",  color: "var(--ok)",    border: "rgba(5,150,105,0.25)", label: "In Stock" },
+  low_stock:    { bg: "rgba(217,119,6,0.08)",  color: "var(--warn)",  border: "rgba(217,119,6,0.25)", label: "Low Stock" },
+  out_of_stock: { bg: "rgba(220,38,38,0.08)",  color: "var(--error)", border: "rgba(220,38,38,0.25)", label: "Out of Stock" },
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
-  // Data
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [summary, setSummary] = useState({ total_skus: 0, total_qty: 0, low_stock: 0, out_of_stock: 0, stock_value: 0 });
 
   // Filters
   const [brand, setBrand] = useState("ALL");
-  const [warehouseId, setWarehouseId] = useState(0);
-  const [statusFilter, setStatusFilter] = useState<"all" | "low" | "out">("all");
+  const [warehouse, setWarehouse] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   // Sort
   const [sortKey, setSortKey] = useState<SortKey>("available_qty");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  // Expanded row details
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  // Alert panel
+  const [alertsPanelOpen, setAlertsPanelOpen] = useState(true);
+
   // Modals
-  const [alertModal, setAlertModal] = useState<AlertConfig | null>(null);
+  const [alertModal, setAlertModal] = useState<{
+    sku_code: string;
+    min_stock: number;
+    reorder_qty: number;
+    lead_days: number;
+  } | null>(null);
   const [adjustModal, setAdjustModal] = useState<{
     sku_id: string;
     sku_code: string;
@@ -138,10 +151,6 @@ export default function InventoryPage() {
     new_qty: number;
   } | null>(null);
 
-  // Reorder panel
-  const [reorderOpen, setReorderOpen] = useState(false);
-
-  // Saving states
   const [alertSaving, setAlertSaving] = useState(false);
   const [adjustSaving, setAdjustSaving] = useState(false);
 
@@ -159,17 +168,18 @@ export default function InventoryPage() {
     try {
       const params = new URLSearchParams();
       if (brand !== "ALL") params.set("brand", brand);
-      if (warehouseId) params.set("warehouse_id", String(warehouseId));
+      if (warehouse) params.set("warehouse", warehouse);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search.trim()) params.set("q", search.trim());
       params.set("page", String(page));
-      params.set("pageSize", String(PAGE_SIZE));
+      params.set("pageSize", String(pageSize));
 
       const res = await fetch(`/api/inventory?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setItems(json.data ?? json.items ?? []);
       setTotal(json.total ?? 0);
+      if (json.summary) setSummary(json.summary);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load inventory");
       setItems([]);
@@ -177,7 +187,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [brand, warehouseId, statusFilter, search, page]);
+  }, [brand, warehouse, statusFilter, search, page, pageSize]);
 
   useEffect(() => {
     fetchInventory();
@@ -188,47 +198,59 @@ export default function InventoryPage() {
   const handleSearch = (val: string) => {
     setSearch(val);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      setPage(1);
-    }, 350);
+    searchTimer.current = setTimeout(() => setPage(1), 350);
   };
 
-  // ─── Sort logic ─────────────────────────────────────────────────────────────
+  // ─── Sort ───────────────────────────────────────────────────────────────────
 
   const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
+    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
   };
 
   const sortedItems = [...items].sort((a, b) => {
     let va: number | string;
     let vb: number | string;
     if (sortKey === "days_left") {
-      va = daysLeft(a) ?? 99999;
-      vb = daysLeft(b) ?? 99999;
+      va = calcDaysLeft(a) ?? 99999;
+      vb = calcDaysLeft(b) ?? 99999;
+    } else if (sortKey === "avg_daily_sales") {
+      va = a.avg_daily_sales ?? -1;
+      vb = b.avg_daily_sales ?? -1;
     } else {
-      va = a[sortKey as keyof InventoryItem] as number | string;
-      vb = b[sortKey as keyof InventoryItem] as number | string;
+      va = (a[sortKey as keyof InventoryItem] as number | string) ?? "";
+      vb = (b[sortKey as keyof InventoryItem] as number | string) ?? "";
     }
-    if (typeof va === "string") {
-      return sortDir === "asc"
-        ? (va as string).localeCompare(vb as string)
-        : (vb as string).localeCompare(va as string);
-    }
-    return sortDir === "asc" ? (va as number) - (vb as number) : (vb as number) - (va as number);
+    if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb as string) : (vb as string).localeCompare(va);
+    return sortDir === "asc" ? va - (vb as number) : (vb as number) - va;
   });
 
-  // ─── Summary calculations ─────────────────────────────────────────────────
+  // ─── Smart alerts ──────────────────────────────────────────────────────────
 
-  const totalSkus = items.length;
-  const lowStock = items.filter((i) => i.available_qty > 0 && i.available_qty <= i.min_stock).length;
-  const outOfStock = items.filter((i) => i.available_qty === 0).length;
-  const totalValue = items.reduce((s, i) => s + i.available_qty * (i.cost_price || 0), 0);
-  const reorderItems = items.filter((i) => i.available_qty <= i.min_stock);
+  const alerts: AlertItem[] = items
+    .map((item) => {
+      const level = classifyAlert(item);
+      if (!level) return null;
+      return { ...item, alert_level: level, days_left: calcDaysLeft(item) };
+    })
+    .filter(Boolean) as AlertItem[];
+
+  // Sort: critical first, then urgent, then warning; within each by days_left asc
+  const alertOrder: Record<AlertLevel, number> = { critical: 0, urgent: 1, warning: 2 };
+  alerts.sort((a, b) => {
+    const oa = alertOrder[a.alert_level] - alertOrder[b.alert_level];
+    if (oa !== 0) return oa;
+    return (a.days_left ?? 99999) - (b.days_left ?? 99999);
+  });
+
+  const criticalCount = alerts.filter((a) => a.alert_level === "critical").length;
+  const urgentCount = alerts.filter((a) => a.alert_level === "urgent").length;
+  const warningCount = alerts.filter((a) => a.alert_level === "warning").length;
+
+  // ─── Summary ────────────────────────────────────────────────────────────────
+
+  // Summary from API — covers ALL filtered data, not just current page
+  const { total_skus: totalSkus, total_qty: totalQty, low_stock: lowStock, out_of_stock: outOfStock, stock_value: totalValue } = summary;
 
   // ─── Alert save ─────────────────────────────────────────────────────────────
 
@@ -240,21 +262,19 @@ export default function InventoryPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          configs: [
-            {
-              sku_id: alertModal.sku_id,
-              min_stock: alertModal.min_stock,
-              reorder_qty: alertModal.reorder_qty,
-              lead_days: alertModal.lead_days,
-            },
-          ],
+          configs: [{
+            sku_code: alertModal.sku_code,
+            min_stock: alertModal.min_stock,
+            reorder_qty: alertModal.reorder_qty,
+            lead_days: alertModal.lead_days,
+          }],
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setAlertModal(null);
       fetchInventory();
     } catch {
-      alert("Failed to save alert configuration");
+      window.alert("Failed to save alert configuration");
     } finally {
       setAlertSaving(false);
     }
@@ -278,26 +298,10 @@ export default function InventoryPage() {
       setAdjustModal(null);
       fetchInventory();
     } catch {
-      alert("Failed to adjust stock");
+      window.alert("Failed to adjust stock");
     } finally {
       setAdjustSaving(false);
     }
-  };
-
-  // ─── Pagination ─────────────────────────────────────────────────────────────
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  // ─── Render helpers ─────────────────────────────────────────────────────────
-
-  const thStyle = (key: SortKey): React.CSSProperties => ({
-    cursor: "pointer",
-    userSelect: "none",
-  });
-
-  const sortIndicator = (key: SortKey) => {
-    if (sortKey !== key) return " \u2195";
-    return sortDir === "asc" ? " \u2191" : " \u2193";
   };
 
   // ─── JST Sync ───────────────────────────────────────────────────────────────
@@ -309,7 +313,8 @@ export default function InventoryPage() {
       const res = await fetch("/api/inventory/sync", { method: "POST" });
       const json = await res.json();
       if (json.ok) {
-        setSyncResult(`Synced ${json.rows} items from JST`);
+        const whInfo = json.warehouses?.length ? ` (${json.warehouses.join(", ")})` : "";
+        setSyncResult(`Synced ${json.rows} items from JST${whInfo}`);
         fetchInventory();
       } else {
         setSyncResult(`Error: ${json.error}`);
@@ -321,17 +326,32 @@ export default function InventoryPage() {
     }
   };
 
+  // ─── Pagination ─────────────────────────────────────────────────────────────
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const toggleExpand = (key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const sortIndicator = (key: SortKey) => {
+    if (sortKey !== key) return " \u2195";
+    return sortDir === "asc" ? " \u2191" : " \u2193";
+  };
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="page">
       {/* Header */}
-      <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h1 className="grad-text" style={{ fontSize: "1.5rem" }}>
-            Inventory Management
-          </h1>
-          <p className="subtitle">Monitor stock levels, set alerts, and manage reorders</p>
+          <h1 className="grad-text" style={{ fontSize: "1.5rem" }}>Inventory Management</h1>
+          <p className="subtitle">Monitor stock levels, smart alerts for high-demand items</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {syncResult && (
@@ -339,12 +359,7 @@ export default function InventoryPage() {
               {syncResult}
             </span>
           )}
-          <button
-            className="ghost"
-            onClick={syncFromJst}
-            disabled={syncing}
-            style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}
-          >
+          <button className="ghost" onClick={syncFromJst} disabled={syncing} style={{ fontSize: "0.85rem", padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
               <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5" />
               <path d="M14 1v4h-4" /><path d="M2 15v-4h4" />
@@ -354,159 +369,158 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Smart Stock Alerts Panel */}
+      {alerts.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, border: "1px solid rgba(220,38,38,0.15)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setAlertsPanelOpen(!alertsPanelOpen)}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0, fontSize: "0.95rem" }}>Stock Alerts</h3>
+              {criticalCount > 0 && (
+                <span className="badge" style={{ background: ALERT_STYLES.critical.bg, color: ALERT_STYLES.critical.color, borderColor: ALERT_STYLES.critical.border }}>
+                  {criticalCount} Critical
+                </span>
+              )}
+              {urgentCount > 0 && (
+                <span className="badge" style={{ background: ALERT_STYLES.urgent.bg, color: ALERT_STYLES.urgent.color, borderColor: ALERT_STYLES.urgent.border }}>
+                  {urgentCount} Urgent
+                </span>
+              )}
+              {warningCount > 0 && (
+                <span className="badge" style={{ background: ALERT_STYLES.warning.bg, color: ALERT_STYLES.warning.color, borderColor: ALERT_STYLES.warning.border }}>
+                  {warningCount} Warning
+                </span>
+              )}
+            </div>
+            <span style={{ fontSize: "1.2rem", color: "var(--text-muted)", transform: alertsPanelOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>{"\u25BC"}</span>
+          </div>
+
+          {alertsPanelOpen && (
+            <div style={{ marginTop: 14 }}>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", margin: "0 0 10px" }}>
+                Only showing SKUs with significant sales volume that are running low or out of stock.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table className="results-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 80 }}>Alert</th>
+                      <th style={{ width: 130 }}>SKU</th>
+                      <th style={{ minWidth: 160 }}>Item Name</th>
+                      <th style={{ width: 80 }}>Brand</th>
+                      <th style={{ width: 90, textAlign: "right" }}>Available</th>
+                      <th style={{ width: 100, textAlign: "right" }}>Avg Sales/Day</th>
+                      <th style={{ width: 80, textAlign: "right" }}>Days Left</th>
+                      <th style={{ width: 80, textAlign: "right" }}>Lead Days</th>
+                      <th style={{ width: 110, textAlign: "right" }}>Order Qty</th>
+                      <th style={{ width: 80 }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alerts.map((item) => {
+                      const style = ALERT_STYLES[item.alert_level];
+                      const suggestedQty = item.reorder_config?.reorder_qty || Math.max(10, Math.ceil((item.avg_daily_sales ?? 0) * getLeadDays(item) * 1.5));
+                      return (
+                        <tr key={`alert-${item.sku_code}`}>
+                          <td>
+                            <span className="badge" style={{ background: style.bg, color: style.color, borderColor: style.border, fontSize: "0.72rem" }}>
+                              {style.label}
+                            </span>
+                          </td>
+                          <td><span style={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, fontSize: "0.82rem" }}>{item.sku_code}</span></td>
+                          <td style={{ fontSize: "0.85rem" }}>{item.item_name}</td>
+                          <td style={{ fontSize: "0.82rem" }}>{item.brand || "\u2013"}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600, color: item.available_qty <= 0 ? "var(--error)" : undefined }}>{fmtInt(item.available_qty)}</td>
+                          <td style={{ textAlign: "right", fontSize: "0.85rem" }}>{item.avg_daily_sales?.toFixed(1) ?? "\u2013"}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600, color: item.days_left != null && item.days_left <= 7 ? "var(--error)" : item.days_left != null && item.days_left <= 14 ? "var(--warn)" : undefined }}>
+                            {item.days_left != null ? `${item.days_left}d` : "\u2014"}
+                          </td>
+                          <td style={{ textAlign: "right" }}>{getLeadDays(item)}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600 }}>{fmtInt(suggestedQty)}</td>
+                          <td>
+                            <button className="ghost" style={{ padding: "4px 10px", fontSize: "0.75rem" }} onClick={() => setAlertModal({
+                              sku_code: item.sku_code,
+                              min_stock: getMinStock(item),
+                              reorder_qty: item.reorder_config?.reorder_qty ?? suggestedQty,
+                              lead_days: getLeadDays(item),
+                            })}>
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <button className="primary" style={{ fontSize: "0.85rem", padding: "8px 18px" }} onClick={() => downloadAlertsCsv(alerts)}>
+                  Export Alerts CSV
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Summary Cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 14,
-          marginBottom: 22,
-        }}
-      >
-        {/* Total SKUs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 22 }}>
+        <div className="kpi-card">
+          <div className="kpi-label">Total Available</div>
+          <div className="kpi-value grad-text">{fmtInt(totalQty)}</div>
+        </div>
         <div className="kpi-card">
           <div className="kpi-label">Total SKUs</div>
           <div className="kpi-value grad-text">{fmtInt(totalSkus)}</div>
         </div>
-
-        {/* Low Stock */}
         <div className="kpi-card">
           <div className="kpi-label">Low Stock</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="kpi-value" style={{ color: "var(--warn)" }}>
-              {fmtInt(lowStock)}
-            </div>
-            {lowStock > 0 && (
-              <span
-                className="badge"
-                style={{
-                  background: "rgba(217,119,6,0.08)",
-                  color: "var(--warn)",
-                  borderColor: "rgba(217,119,6,0.25)",
-                  fontSize: "0.7rem",
-                }}
-              >
-                Needs Attention
-              </span>
-            )}
-          </div>
+          <div className="kpi-value" style={{ color: "var(--warn)" }}>{fmtInt(lowStock)}</div>
         </div>
-
-        {/* Out of Stock */}
         <div className="kpi-card">
           <div className="kpi-label">Out of Stock</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="kpi-value" style={{ color: "var(--error)" }}>
-              {fmtInt(outOfStock)}
-            </div>
-            {outOfStock > 0 && (
-              <span
-                className="badge"
-                style={{
-                  background: "rgba(220,38,38,0.08)",
-                  color: "var(--error)",
-                  borderColor: "rgba(220,38,38,0.25)",
-                  fontSize: "0.7rem",
-                }}
-              >
-                Critical
-              </span>
-            )}
-          </div>
+          <div className="kpi-value" style={{ color: "var(--error)" }}>{fmtInt(outOfStock)}</div>
         </div>
-
-        {/* Total Stock Value */}
         <div className="kpi-card">
-          <div className="kpi-label">Total Stock Value</div>
-          <div className="kpi-value grad-text" style={{ fontSize: "1.4rem" }}>
-            {fmt(totalValue)}
-          </div>
+          <div className="kpi-label">Stock Value (RSP)</div>
+          <div className="kpi-value grad-text" style={{ fontSize: "1.2rem" }}>{totalValue.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
         </div>
       </div>
 
       {/* Filter Bar */}
       <div className="card" style={{ marginBottom: 16, padding: 16 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          {/* Brand */}
-          <select
-            className="select"
-            value={brand}
-            onChange={(e) => {
-              setBrand(e.target.value);
-              setPage(1);
-            }}
-            style={{ minWidth: 130 }}
-          >
-            {BRANDS.map((b) => (
-              <option key={b} value={b}>
-                {b === "ALL" ? "All Brands" : b}
-              </option>
-            ))}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <select className="select" value={brand} onChange={(e) => { setBrand(e.target.value); setPage(1); }} style={{ minWidth: 130 }}>
+            {BRANDS.map((b) => <option key={b} value={b}>{b === "ALL" ? "All Brands" : b}</option>)}
           </select>
-
-          {/* Warehouse */}
-          <select
-            className="select"
-            value={warehouseId}
-            onChange={(e) => {
-              setWarehouseId(Number(e.target.value));
-              setPage(1);
-            }}
-            style={{ minWidth: 160 }}
-          >
-            {WAREHOUSES.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
+          <select className="select" value={warehouse} onChange={(e) => { setWarehouse(e.target.value); setPage(1); }} style={{ minWidth: 180 }}>
+            {WAREHOUSES.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
           </select>
-
-          {/* Stock Status */}
-          <select
-            className="select"
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value as "all" | "low" | "out");
-              setPage(1);
-            }}
-            style={{ minWidth: 130 }}
-          >
-            <option value="all">All Stock</option>
-            <option value="low">Low Stock</option>
-            <option value="out">Out of Stock</option>
+          <select className="select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ minWidth: 130 }}>
+            {STOCK_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
+          <input type="text" placeholder="Search SKU or product name..." value={search} onChange={(e) => handleSearch(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+        </div>
+      </div>
 
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search SKU or product name..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            style={{ flex: 1, minWidth: 200 }}
-          />
+      {/* Pagination + Rows per page */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem" }}>
+          <span style={{ color: "var(--text-muted)" }}>Rows per page:</span>
+          <select className="select" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} style={{ width: 80, padding: "4px 8px", fontSize: "0.85rem" }}>
+            {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <span style={{ color: "var(--text-muted)", marginLeft: 8 }}>{total} total</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="ghost" style={{ padding: "6px 14px", fontSize: "0.85rem" }} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
+          <span className="pager-info">Page {page} / {totalPages}</span>
+          <button className="ghost" style={{ padding: "6px 14px", fontSize: "0.85rem" }} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div
-          style={{
-            padding: "12px 16px",
-            borderRadius: 10,
-            background: "rgba(220,38,38,0.06)",
-            border: "1px solid rgba(220,38,38,0.2)",
-            color: "var(--error)",
-            marginBottom: 14,
-            fontSize: "0.9rem",
-          }}
-        >
+        <div style={{ padding: "12px 16px", borderRadius: 10, background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", color: "var(--error)", marginBottom: 14, fontSize: "0.9rem" }}>
           {error}
         </div>
       )}
@@ -517,129 +531,63 @@ export default function InventoryPage() {
           <table className="results-table">
             <thead>
               <tr>
-                <th style={{ ...thStyle("sku_code"), width: 120 }} onClick={() => handleSort("sku_code")}>
-                  SKU Code{sortIndicator("sku_code")}
-                </th>
-                <th style={{ ...thStyle("item_name"), minWidth: 180 }} onClick={() => handleSort("item_name")}>
-                  Item Name{sortIndicator("item_name")}
-                </th>
-                <th style={{ ...thStyle("warehouse_name"), width: 130 }} onClick={() => handleSort("warehouse_name")}>
-                  Warehouse{sortIndicator("warehouse_name")}
-                </th>
-                <th style={{ ...thStyle("available_qty"), width: 90, textAlign: "right" }} onClick={() => handleSort("available_qty")}>
-                  Available{sortIndicator("available_qty")}
-                </th>
-                <th style={{ ...thStyle("actual_qty"), width: 80, textAlign: "right" }} onClick={() => handleSort("actual_qty")}>
-                  Actual{sortIndicator("actual_qty")}
-                </th>
-                <th style={{ ...thStyle("locked_qty"), width: 80, textAlign: "right" }} onClick={() => handleSort("locked_qty")}>
-                  Locked{sortIndicator("locked_qty")}
-                </th>
-                <th style={{ ...thStyle("defective_qty"), width: 90, textAlign: "right" }} onClick={() => handleSort("defective_qty")}>
-                  Defective{sortIndicator("defective_qty")}
-                </th>
-                <th style={{ ...thStyle("min_stock"), width: 90, textAlign: "right" }} onClick={() => handleSort("min_stock")}>
-                  Min Stock{sortIndicator("min_stock")}
-                </th>
+                <th style={{ width: 36 }}></th>
+                <th style={{ cursor: "pointer", userSelect: "none", width: 130 }} onClick={() => handleSort("sku_code")}>SKU{sortIndicator("sku_code")}</th>
+                <th style={{ cursor: "pointer", userSelect: "none", minWidth: 180 }} onClick={() => handleSort("item_name")}>Item Name{sortIndicator("item_name")}</th>
+                <th style={{ cursor: "pointer", userSelect: "none", width: 90 }} onClick={() => handleSort("brand")}>Brand{sortIndicator("brand")}</th>
+                <th style={{ cursor: "pointer", userSelect: "none", width: 90, textAlign: "right" }} onClick={() => handleSort("available_qty")}>Available{sortIndicator("available_qty")}</th>
                 <th style={{ width: 100, textAlign: "center" }}>Status</th>
-                <th style={{ ...thStyle("days_left"), width: 90, textAlign: "right" }} onClick={() => handleSort("days_left")}>
-                  Days Left{sortIndicator("days_left")}
-                </th>
-                <th style={{ width: 150, textAlign: "center" }}>Actions</th>
+                <th style={{ cursor: "pointer", userSelect: "none", width: 100, textAlign: "right" }} onClick={() => handleSort("avg_daily_sales")}>Sales/Day{sortIndicator("avg_daily_sales")}</th>
+                <th style={{ cursor: "pointer", userSelect: "none", width: 90, textAlign: "right" }} onClick={() => handleSort("days_left")}>Days Left{sortIndicator("days_left")}</th>
+                <th style={{ width: 120 }}>Warehouse</th>
+                <th style={{ width: 130, textAlign: "center" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={11} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
-                    Loading inventory...
-                  </td>
-                </tr>
+                <tr><td colSpan={10} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>Loading inventory...</td></tr>
               ) : sortedItems.length === 0 ? (
-                <tr>
-                  <td colSpan={11} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
-                    No inventory items found
-                  </td>
-                </tr>
+                <tr><td colSpan={10} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>No inventory items found</td></tr>
               ) : (
-                sortedItems.map((item) => {
-                  const status = stockStatus(item);
-                  const badge = STATUS_BADGE[status];
-                  const dl = daysLeft(item);
+                sortedItems.map((item, idx) => {
+                  const rowKey = `${item.sku_code}-${idx}`;
+                  const badge = STATUS_BADGE[item.stock_status] || STATUS_BADGE.normal;
+                  const dl = calcDaysLeft(item);
+                  const isExpanded = expandedRows.has(rowKey);
+
                   return (
-                    <tr key={`${item.sku_id}-${item.warehouse_id}`}>
-                      <td>
-                        <span
-                          style={{
-                            fontFamily: '"IBM Plex Mono", monospace',
-                            fontWeight: 600,
-                            fontSize: "0.82rem",
-                          }}
-                        >
-                          {item.sku_code}
-                        </span>
-                      </td>
+                    <tr key={rowKey} style={{ cursor: "pointer" }} onClick={() => toggleExpand(rowKey)}>
+                      <td style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "0.8rem" }}>{isExpanded ? "\u25BE" : "\u25B8"}</td>
+                      <td><span style={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, fontSize: "0.82rem" }}>{item.sku_code}</span></td>
                       <td>{item.item_name}</td>
-                      <td>{item.warehouse_name}</td>
+                      <td style={{ fontSize: "0.82rem" }}>{item.brand || "\u2013"}</td>
                       <td style={{ textAlign: "right", fontWeight: 600 }}>{fmtInt(item.available_qty)}</td>
-                      <td style={{ textAlign: "right" }}>{fmtInt(item.actual_qty)}</td>
-                      <td style={{ textAlign: "right" }}>{fmtInt(item.locked_qty)}</td>
-                      <td style={{ textAlign: "right" }}>{fmtInt(item.defective_qty)}</td>
-                      <td style={{ textAlign: "right" }}>{fmtInt(item.min_stock)}</td>
                       <td style={{ textAlign: "center" }}>
-                        <span
-                          className="badge"
-                          style={{
-                            background: badge.bg,
-                            color: badge.color,
-                            borderColor: badge.border,
-                          }}
-                        >
-                          {badge.label}
-                        </span>
+                        <span className="badge" style={{ background: badge.bg, color: badge.color, borderColor: badge.border }}>{badge.label}</span>
                       </td>
+                      <td style={{ textAlign: "right", fontSize: "0.85rem" }}>{item.avg_daily_sales?.toFixed(1) ?? "\u2013"}</td>
                       <td style={{ textAlign: "right" }}>
                         {dl != null ? (
-                          <span style={{ color: dl <= 7 ? "var(--error)" : dl <= 14 ? "var(--warn)" : "var(--text)" }}>
-                            {dl}d
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--text-muted)" }}>{"\u2014"}</span>
-                        )}
+                          <span style={{ fontWeight: 600, color: dl <= 7 ? "var(--error)" : dl <= 14 ? "var(--warn)" : "var(--text)" }}>{dl}d</span>
+                        ) : <span style={{ color: "var(--text-muted)" }}>{"\u2014"}</span>}
                       </td>
-                      <td style={{ textAlign: "center" }}>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                          <button
-                            className="ghost"
-                            style={{ padding: "5px 10px", fontSize: "0.78rem" }}
-                            onClick={() =>
-                              setAlertModal({
-                                sku_id: item.sku_id,
-                                sku_code: item.sku_code,
-                                min_stock: item.min_stock,
-                                reorder_qty: item.reorder_qty || 0,
-                                lead_days: item.lead_days || 7,
-                              })
-                            }
-                          >
-                            Set Alert
-                          </button>
-                          <button
-                            className="ghost"
-                            style={{ padding: "5px 10px", fontSize: "0.78rem" }}
-                            onClick={() =>
-                              setAdjustModal({
-                                sku_id: item.sku_id,
-                                sku_code: item.sku_code,
-                                warehouse_id: item.warehouse_id,
-                                warehouse_name: item.warehouse_name,
-                                current_qty: item.available_qty,
-                                new_qty: item.available_qty,
-                              })
-                            }
-                          >
-                            Adjust
-                          </button>
+                      <td style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{item.warehouse || "\u2013"}</td>
+                      <td style={{ textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                          <button className="ghost" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => setAlertModal({
+                            sku_code: item.sku_code,
+                            min_stock: getMinStock(item),
+                            reorder_qty: item.reorder_config?.reorder_qty ?? 0,
+                            lead_days: getLeadDays(item),
+                          })}>Alert</button>
+                          <button className="ghost" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => setAdjustModal({
+                            sku_id: item.sku_id,
+                            sku_code: item.sku_code,
+                            warehouse_id: 0,
+                            warehouse_name: "Total",
+                            current_qty: item.available_qty,
+                            new_qty: item.available_qty,
+                          })}>Adjust</button>
                         </div>
                       </td>
                     </tr>
@@ -648,265 +596,55 @@ export default function InventoryPage() {
               )}
             </tbody>
           </table>
+
+          {/* Expanded row details */}
+          {sortedItems.map((item, idx) => {
+            const rowKey = `${item.sku_code}-${idx}`;
+            if (!expandedRows.has(rowKey)) return null;
+            return (
+              <div key={`detail-${rowKey}`} style={{ padding: "12px 20px", background: "var(--surface-2)", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
+                {/* Summary stats */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "8px 20px", marginBottom: 0 }}>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Actual Qty</span><br /><strong>{fmtInt(item.actual_qty)}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Locked</span><br /><strong>{fmtInt(item.locked_qty)}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Defective</span><br /><strong>{fmtInt(item.defective_qty)}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Min Stock</span><br /><strong>{fmtInt(getMinStock(item))}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Reorder Qty</span><br /><strong>{fmtInt(item.reorder_config?.reorder_qty ?? 0)}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Lead Days</span><br /><strong>{getLeadDays(item)}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Cost Price</span><br /><strong>{item.cost_price?.toLocaleString("th-TH", { minimumFractionDigits: 2 }) ?? "\u2013"}</strong></div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div
-            className="pager"
-            style={{
-              padding: "12px 16px",
-              borderTop: "1px solid var(--border)",
-              justifyContent: "center",
-            }}
-          >
-            <button
-              className="ghost"
-              style={{ padding: "6px 14px", fontSize: "0.85rem" }}
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Previous
-            </button>
-            <span className="pager-info">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              className="ghost"
-              style={{ padding: "6px 14px", fontSize: "0.85rem" }}
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Reorder Suggestions Panel */}
-      <div className="card" style={{ marginTop: 16 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            cursor: "pointer",
-          }}
-          onClick={() => setReorderOpen(!reorderOpen)}
-        >
-          <div>
-            <h3 style={{ margin: 0, fontSize: "0.95rem" }}>
-              Reorder Suggestions
-              {reorderItems.length > 0 && (
-                <span
-                  className="badge"
-                  style={{
-                    marginLeft: 8,
-                    background: "rgba(217,119,6,0.08)",
-                    color: "var(--warn)",
-                    borderColor: "rgba(217,119,6,0.25)",
-                  }}
-                >
-                  {reorderItems.length}
-                </span>
-              )}
-            </h3>
-            <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: "0.85rem" }}>
-              Items at or below minimum stock level
-            </p>
-          </div>
-          <span
-            style={{
-              fontSize: "1.2rem",
-              color: "var(--text-muted)",
-              transform: reorderOpen ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s",
-            }}
-          >
-            {"\u25BC"}
-          </span>
-        </div>
-
-        {reorderOpen && (
-          <div style={{ marginTop: 14 }}>
-            {reorderItems.length === 0 ? (
-              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", margin: 0 }}>
-                No items currently need reordering.
-              </p>
-            ) : (
-              <>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="results-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 120 }}>SKU</th>
-                        <th style={{ width: 100, textAlign: "right" }}>Current Stock</th>
-                        <th style={{ width: 100, textAlign: "right" }}>Min Stock</th>
-                        <th style={{ width: 140, textAlign: "right" }}>Suggested Reorder Qty</th>
-                        <th style={{ width: 90, textAlign: "right" }}>Lead Days</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reorderItems.map((item) => (
-                        <tr key={`reorder-${item.sku_id}-${item.warehouse_id}`}>
-                          <td>
-                            <span
-                              style={{
-                                fontFamily: '"IBM Plex Mono", monospace',
-                                fontWeight: 600,
-                                fontSize: "0.82rem",
-                              }}
-                            >
-                              {item.sku_code}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: "right" }}>{fmtInt(item.available_qty)}</td>
-                          <td style={{ textAlign: "right" }}>{fmtInt(item.min_stock)}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600 }}>
-                            {fmtInt(item.reorder_qty || item.min_stock * 2)}
-                          </td>
-                          <td style={{ textAlign: "right" }}>{item.lead_days || 7}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <button className="primary" onClick={() => downloadCsv(reorderItems)}>
-                    Export Reorder List
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Alert Configuration Modal */}
       {alertModal && (
         <div className="modal modal-center">
           <div className="modal-backdrop" onClick={() => setAlertModal(null)} />
-          <div className="modal-content" style={{ maxWidth: 460 }}>
+          <div className="modal-content" style={{ maxWidth: 420 }}>
             <div className="modal-header">
-              <span className="modal-title">Configure Stock Alert</span>
-              <button
-                className="ghost"
-                style={{ padding: "4px 10px", fontSize: "1rem" }}
-                onClick={() => setAlertModal(null)}
-              >
-                {"\u2715"}
-              </button>
+              <span className="modal-title">Stock Alert: {alertModal.sku_code}</span>
+              <button className="ghost" style={{ padding: "4px 10px", fontSize: "1rem" }} onClick={() => setAlertModal(null)}>{"\u2715"}</button>
             </div>
             <div className="modal-body" style={{ display: "grid", gap: 14 }}>
-              {/* SKU */}
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  SKU
-                </label>
-                <input
-                  type="text"
-                  value={alertModal.sku_code}
-                  readOnly
-                  style={{ width: "100%", background: "var(--surface-2)", cursor: "default" }}
-                />
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Min Stock</label>
+                <input type="number" min={0} value={alertModal.min_stock} onChange={(e) => setAlertModal({ ...alertModal, min_stock: parseInt(e.target.value) || 0 })} style={{ width: "100%" }} />
               </div>
-
-              {/* Min Stock */}
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  Min Stock
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={alertModal.min_stock}
-                  onChange={(e) =>
-                    setAlertModal({ ...alertModal, min_stock: parseInt(e.target.value) || 0 })
-                  }
-                  style={{ width: "100%" }}
-                />
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Reorder Quantity</label>
+                <input type="number" min={0} value={alertModal.reorder_qty} onChange={(e) => setAlertModal({ ...alertModal, reorder_qty: parseInt(e.target.value) || 0 })} style={{ width: "100%" }} />
               </div>
-
-              {/* Reorder Quantity */}
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  Reorder Quantity
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={alertModal.reorder_qty}
-                  onChange={(e) =>
-                    setAlertModal({ ...alertModal, reorder_qty: parseInt(e.target.value) || 0 })
-                  }
-                  style={{ width: "100%" }}
-                />
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Lead Days</label>
+                <input type="number" min={0} value={alertModal.lead_days} onChange={(e) => setAlertModal({ ...alertModal, lead_days: parseInt(e.target.value) || 0 })} style={{ width: "100%" }} />
               </div>
-
-              {/* Lead Days */}
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  Lead Days
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={alertModal.lead_days}
-                  onChange={(e) =>
-                    setAlertModal({ ...alertModal, lead_days: parseInt(e.target.value) || 0 })
-                  }
-                  style={{ width: "100%" }}
-                />
-              </div>
-
-              {/* Actions */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
-                <button className="ghost" onClick={() => setAlertModal(null)}>
-                  Cancel
-                </button>
-                <button className="primary" onClick={saveAlert} disabled={alertSaving}>
-                  {alertSaving ? "Saving..." : "Save"}
-                </button>
+                <button className="ghost" onClick={() => setAlertModal(null)}>Cancel</button>
+                <button className="primary" onClick={saveAlert} disabled={alertSaving}>{alertSaving ? "Saving..." : "Save"}</button>
               </div>
             </div>
           </div>
@@ -917,149 +655,30 @@ export default function InventoryPage() {
       {adjustModal && (
         <div className="modal modal-center">
           <div className="modal-backdrop" onClick={() => setAdjustModal(null)} />
-          <div className="modal-content" style={{ maxWidth: 460 }}>
+          <div className="modal-content" style={{ maxWidth: 420 }}>
             <div className="modal-header">
-              <span className="modal-title">Adjust Stock</span>
-              <button
-                className="ghost"
-                style={{ padding: "4px 10px", fontSize: "1rem" }}
-                onClick={() => setAdjustModal(null)}
-              >
-                {"\u2715"}
-              </button>
+              <span className="modal-title">Adjust Stock: {adjustModal.sku_code}</span>
+              <button className="ghost" style={{ padding: "4px 10px", fontSize: "1rem" }} onClick={() => setAdjustModal(null)}>{"\u2715"}</button>
             </div>
             <div className="modal-body" style={{ display: "grid", gap: 14 }}>
-              {/* SKU */}
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  SKU
-                </label>
-                <input
-                  type="text"
-                  value={adjustModal.sku_code}
-                  readOnly
-                  style={{ width: "100%", background: "var(--surface-2)", cursor: "default" }}
-                />
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Inventory</label>
+                <input type="text" value="Total (all warehouses)" readOnly style={{ width: "100%", background: "var(--surface-2)", cursor: "default" }} />
               </div>
-
-              {/* Warehouse */}
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  Warehouse
-                </label>
-                <select
-                  className="select"
-                  value={adjustModal.warehouse_id}
-                  onChange={(e) =>
-                    setAdjustModal({
-                      ...adjustModal,
-                      warehouse_id: Number(e.target.value),
-                      warehouse_name:
-                        WAREHOUSES.find((w) => w.id === Number(e.target.value))?.name ?? "",
-                    })
-                  }
-                  style={{ width: "100%" }}
-                >
-                  {WAREHOUSES.filter((w) => w.id !== 0).map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Current Quantity</label>
+                <input type="number" value={adjustModal.current_qty} readOnly style={{ width: "100%", background: "var(--surface-2)", cursor: "default" }} />
               </div>
-
-              {/* Current Qty */}
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  Current Quantity
-                </label>
-                <input
-                  type="number"
-                  value={adjustModal.current_qty}
-                  readOnly
-                  style={{ width: "100%", background: "var(--surface-2)", cursor: "default" }}
-                />
+                <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>New Quantity</label>
+                <input type="number" min={0} value={adjustModal.new_qty} onChange={(e) => setAdjustModal({ ...adjustModal, new_qty: parseInt(e.target.value) || 0 })} style={{ width: "100%" }} />
               </div>
-
-              {/* New Qty */}
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 5,
-                  }}
-                >
-                  New Quantity
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={adjustModal.new_qty}
-                  onChange={(e) =>
-                    setAdjustModal({ ...adjustModal, new_qty: parseInt(e.target.value) || 0 })
-                  }
-                  style={{ width: "100%" }}
-                />
-              </div>
-
-              {/* Warning */}
-              <div
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  background: "rgba(217,119,6,0.06)",
-                  border: "1px solid rgba(217,119,6,0.2)",
-                  color: "var(--warn)",
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                }}
-              >
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.2)", color: "var(--warn)", fontSize: "0.85rem", fontWeight: 500 }}>
                 This will adjust stock in JST ERP
               </div>
-
-              {/* Actions */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
-                <button className="ghost" onClick={() => setAdjustModal(null)}>
-                  Cancel
-                </button>
-                <button className="primary" onClick={saveAdjust} disabled={adjustSaving}>
-                  {adjustSaving ? "Confirming..." : "Confirm"}
-                </button>
+                <button className="ghost" onClick={() => setAdjustModal(null)}>Cancel</button>
+                <button className="primary" onClick={saveAdjust} disabled={adjustSaving}>{adjustSaving ? "Confirming..." : "Confirm"}</button>
               </div>
             </div>
           </div>

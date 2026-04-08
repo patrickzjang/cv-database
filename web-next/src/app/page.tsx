@@ -326,9 +326,29 @@ export default function Home() {
     setImageMap((prev) => new Map(prev).set(variation, images));
   };
 
-  const downloadUrl = async (url: string, _filename: string) => {
-    // R2 presigned URLs work directly in browser
-    window.open(url, "_blank", "noopener,noreferrer");
+  const downloadUrl = async (url: string, filename: string, key?: string) => {
+    try {
+      let downloadLink = url;
+      // If we have an R2 key, get a presigned URL with Content-Disposition: attachment
+      if (key && key.startsWith("main-images/")) {
+        const res = await fetch("/api/main-images/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, filename }),
+        });
+        const d = await res.json();
+        if (d.url) downloadLink = d.url;
+      }
+      const a = document.createElement("a");
+      a.href = downloadLink;
+      a.download = filename || "image.jpg";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   };
 
   const deleteImage = async (key: string, variation: string) => {
@@ -355,7 +375,7 @@ export default function Home() {
 
   const downloadAll = async (images: ImageRef[]) => {
     for (const img of images) {
-      await downloadUrl(img.url, img.name);
+      await downloadUrl(img.url, img.name, (img as any).key);
       await new Promise((r) => setTimeout(r, 300));
     }
   };
@@ -465,31 +485,6 @@ export default function Home() {
                           className="thumb"
                           onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
                         />
-                        <details className="download-menu" onClick={(e) => e.stopPropagation()}>
-                          <summary className="ghost download-trigger">Download ▾</summary>
-                          <div className="download-pop">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                downloadUrl(img.url, img.name);
-                                closeDownloadMenu(e.currentTarget);
-                              }}
-                            >
-                              First image
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                downloadAll(images);
-                                closeDownloadMenu(e.currentTarget);
-                              }}
-                            >
-                              All images
-                            </button>
-                          </div>
-                        </details>
                       </>
                     ) : (
                       <div>No image</div>
@@ -587,39 +582,13 @@ export default function Home() {
                 ))}
                 <td className="thumb-wrap thumb-col">
                   {img ? (
-                    <>
-                      <img
-                        src={img.url}
-                        alt={img.name}
-                        className="thumb"
-                        onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
-                      />
-                      <details className="download-menu" onClick={(e) => e.stopPropagation()}>
-                        <summary className="ghost download-trigger">Download ▾</summary>
-                        <div className="download-pop">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadUrl(img.url, img.name);
-                              closeDownloadMenu(e.currentTarget);
-                            }}
-                          >
-                            First image
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadAll(images);
-                              closeDownloadMenu(e.currentTarget);
-                            }}
-                          >
-                            All images
-                          </button>
-                        </div>
-                      </details>
-                    </>
+                    <img
+                      src={img.url}
+                      alt={img.name}
+                      className="thumb"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => openModal(String(variation), String(row.BRAND || currentBrand))}
+                    />
                   ) : (
                     "—"
                   )}
@@ -780,15 +749,17 @@ export default function Home() {
                   <option value="1000">1000</option>
                 </select>
                 <button className="primary" onClick={() => { setCurrentPage(1); runSearch(); }}>Search</button>
-                <details className="export-dropdown">
-                  <summary className="ghost export-dropdown-trigger">
+                <details style={{ position: "relative", display: "inline-block" }}>
+                  <summary className="ghost" style={{ listStyle: "none", cursor: "pointer", userSelect: "none", padding: "8px 16px", fontSize: "0.85rem" }}>
                     Export ▾
                   </summary>
-                  <div className="export-dropdown-menu">
-                    <button type="button" disabled={rows.length === 0} onClick={(e) => { exportAll(); (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; }}>
+                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", minWidth: 170, padding: 6, borderRadius: 10, border: "1px solid var(--border-2)", background: "#fff", boxShadow: "0 8px 28px rgba(0,0,0,0.12)", zIndex: 10 }}>
+                    <button type="button" disabled={rows.length === 0} onClick={(e) => { exportAll(); (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; }}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", border: "none", background: "transparent", borderRadius: 6, fontSize: "0.85rem", cursor: "pointer" }}>
                       Export All
                     </button>
-                    <button type="button" disabled={selectedRows.size === 0} onClick={(e) => { exportSelected(); (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; }}>
+                    <button type="button" disabled={selectedRows.size === 0} onClick={(e) => { exportSelected(); (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; }}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", border: "none", background: "transparent", borderRadius: 6, fontSize: "0.85rem", cursor: "pointer" }}>
                       Export Selected{selectedRows.size > 0 ? ` (${selectedRows.size})` : ""}
                     </button>
                   </div>
@@ -832,7 +803,7 @@ export default function Home() {
                     <img src={img.url} alt={img.name} className="thumb" />
                     <div>{img.name}</div>
                     <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                      <button className="ghost" onClick={() => downloadUrl(img.url, img.name)} style={{ fontSize: "0.82rem" }}>Download</button>
+                      <button className="ghost" onClick={() => downloadUrl(img.url, img.name, (img as any).key)} style={{ fontSize: "0.82rem" }}>Download</button>
                       {img.key && (
                         <button
                           className="ghost"

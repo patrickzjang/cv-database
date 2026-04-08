@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { streamEmbedUrl } from "@/lib/cloudflare-stream";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type MasterRow = Record<string, string | number | null>;
@@ -16,8 +17,11 @@ type PlatformMap = {
 };
 type DamAsset = {
   id: string; asset_type: string; title?: string; status: string;
-  raw_filename?: string; thumbnail_path?: string; stream_thumbnail_url?: string; created_at: string;
+  raw_filename?: string; thumbnail_path?: string; stream_thumbnail_url?: string;
+  stream_uid?: string; stream_hls_url?: string; duration_sec?: number;
+  notes?: string; created_at: string;
 };
+type MainImage = { key: string; filename: string; url: string };
 type InventoryRow = {
   sku_id: string; sku_code?: string; warehouse_name?: string;
   available_qty: number; actual_qty: number; locked_qty: number; defective_qty: number;
@@ -36,7 +40,7 @@ type ProductData = {
   jstProducts: any[];
 };
 
-const TABS = ["Info", "Pricing", "Assets", "Inventory", "Sales", "Platforms"] as const;
+const TABS = ["Info", "Images", "Pricing", "Assets", "Inventory", "Sales", "Platforms"] as const;
 type Tab = (typeof TABS)[number];
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -92,6 +96,15 @@ export default function ProductDetailPage() {
   const [savedDesc, setSavedDesc] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
 
+  // Images tab
+  const [mainImages, setMainImages] = useState<MainImage[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<MainImage | null>(null);
+
+  // Asset popup
+  const [assetPopup, setAssetPopup] = useState<DamAsset | null>(null);
+  const [assetDownloading, setAssetDownloading] = useState(false);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -111,13 +124,25 @@ export default function ProductDetailPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(""), 3000); return () => clearTimeout(t); } }, [toast]);
 
+  /* ── Load main images when Images tab is selected ────────────────── */
+  const dataBrand = data?.brand || (data?.masterRows?.[0]?.BRAND as string) || "";
+  useEffect(() => {
+    if (tab !== "Images" || !data || mainImages.length > 0 || imagesLoading) return;
+    setImagesLoading(true);
+    fetch(`/api/main-images?sku=${encodeURIComponent(sku)}&brand=${encodeURIComponent(dataBrand)}`)
+      .then((r) => r.json())
+      .then((d) => setMainImages(d.images ?? []))
+      .catch(() => {})
+      .finally(() => setImagesLoading(false));
+  }, [tab, sku, dataBrand, data, mainImages.length, imagesLoading]);
+
   if (loading) return <div className="page" style={{ textAlign: "center", padding: 80, color: "var(--text-muted)" }}>Loading...</div>;
   if (error || !data) return (
     <div className="page">
       <div className="card" style={{ textAlign: "center", padding: 40 }}>
         <h2>Product Not Found</h2>
         <p style={{ color: "var(--text-muted)" }}>{error || `No data for ${sku}`}</p>
-        <a href="/products/pricing" style={{ color: "var(--app-accent)", fontWeight: 600 }}>Back to Products</a>
+        <a href="/" style={{ color: "var(--app-accent)", fontWeight: 600 }}>Back to Products</a>
       </div>
     </div>
   );
@@ -128,6 +153,76 @@ export default function ProductDetailPage() {
   const description = (firstRow.DESCRIPTION as string) || "";
   const listedCount = data.platformMappings.filter((m) => m.listing_status === "listed").length;
   const totalStock = data.inventory.reduce((s, i) => s + i.available_qty, 0);
+
+  async function downloadImage(imageKey: string, filename: string) {
+    try {
+      // Get a presigned URL with Content-Disposition: attachment
+      const res = await fetch("/api/main-images/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: imageKey, filename }),
+      });
+      const d = await res.json();
+      if (d.url) {
+        const a = document.createElement("a");
+        a.href = d.url;
+        a.download = filename;
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } catch {
+      // Fallback: open in new tab
+      const img = mainImages.find((i) => i.key === imageKey);
+      if (img) window.open(img.url, "_blank");
+    }
+  }
+
+  async function downloadAllImages() {
+    for (const img of mainImages) {
+      await downloadImage(img.key, img.filename);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  async function downloadAsset(asset: DamAsset) {
+    setAssetDownloading(true);
+    try {
+      const res = await fetch("/api/dam/presign/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetId: asset.id, type: "raw" }),
+      });
+      const d = await res.json();
+      if (d.url) {
+        window.open(d.url, "_blank");
+      } else {
+        setToast(d.error || "No download available");
+      }
+    } catch {
+      setToast("Download failed");
+    }
+    setAssetDownloading(false);
+  }
+
+  async function deleteAsset(asset: DamAsset) {
+    if (!confirm(`Delete asset "${asset.raw_filename || asset.title || asset.id}"?`)) return;
+    try {
+      const res = await fetch(`/api/dam/assets/${asset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archived", _actor: "user" }),
+      });
+      if (res.ok) {
+        setAssetPopup(null);
+        setToast("Asset archived");
+        fetchData();
+      } else {
+        setToast("Failed to delete asset");
+      }
+    } catch { setToast("Failed to delete asset"); }
+  }
 
   /* ── Actions ────────────────────────────────────────────────────────── */
   async function syncToJst() {
@@ -182,7 +277,7 @@ export default function ProductDetailPage() {
 
       {/* Breadcrumb */}
       <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: 12 }}>
-        <a href="/products/pricing" style={{ color: "var(--app-accent)" }}>Products</a>
+        <a href="/" style={{ color: "var(--app-accent)" }}>Products</a>
         {" > "}{brand}{" > "}{parentsSku}{" > "}<strong>{sku}</strong>
       </div>
 
@@ -231,7 +326,7 @@ export default function ProductDetailPage() {
             fontWeight: tab === t ? 700 : 400, color: tab === t ? "var(--app-accent)" : "var(--text-muted)",
             borderBottom: tab === t ? "2px solid var(--app-accent)" : "2px solid transparent",
             marginBottom: -2, fontSize: "0.92rem", whiteSpace: "nowrap",
-          }}>{t}{t === "Assets" ? ` (${data.damAssets.length})` : t === "Platforms" ? ` (${listedCount})` : ""}</button>
+          }}>{t}{t === "Images" && mainImages.length > 0 ? ` (${mainImages.length})` : t === "Assets" ? ` (${data.damAssets.length})` : t === "Platforms" ? ` (${listedCount})` : ""}</button>
         ))}
       </div>
 
@@ -298,6 +393,40 @@ export default function ProductDetailPage() {
         </div>
       )}
 
+      {/* ═══ TAB: Images ═══ */}
+      {tab === "Images" && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ margin: 0 }}>Product Images ({mainImages.length})</h3>
+            {mainImages.length > 0 && (
+              <button className="ghost" onClick={downloadAllImages} style={{ fontSize: "0.82rem", padding: "6px 14px" }}>Download All</button>
+            )}
+          </div>
+          {imagesLoading ? (
+            <p style={{ color: "var(--text-muted)", textAlign: "center", padding: 30 }}>Loading images...</p>
+          ) : mainImages.length === 0 ? (
+            <p style={{ color: "var(--text-muted)", textAlign: "center", padding: 30 }}>No product images found. Upload images from the search page.</p>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 14 }}>
+              {mainImages.map((img) => (
+                <div key={img.key} style={{ border: "1px solid var(--border-2)", borderRadius: 10, overflow: "hidden", background: "var(--surface)" }}>
+                  <div
+                    style={{ height: 160, background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden" }}
+                    onClick={() => setLightboxImage(img)}
+                  >
+                    <img src={img.url} alt={img.filename} style={{ width: "100%", height: "100%", objectFit: "contain" }} loading="lazy" />
+                  </div>
+                  <div style={{ padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.78rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{img.filename}</span>
+                    <button className="ghost" onClick={() => downloadImage(img.key, img.filename)} style={{ fontSize: "0.75rem", padding: "4px 10px", flexShrink: 0, marginLeft: 6 }}>Download</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ═══ TAB: Pricing ═══ */}
       {tab === "Pricing" && (
         <div className="card">
@@ -355,12 +484,12 @@ export default function ProductDetailPage() {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
               {data.damAssets.map((a) => (
-                <div key={a.id} style={{ border: "1px solid var(--border-2)", borderRadius: 10, overflow: "hidden", background: "var(--surface)" }}>
+                <div key={a.id} onClick={() => setAssetPopup(a)} style={{ border: "1px solid var(--border-2)", borderRadius: 10, overflow: "hidden", background: "var(--surface)", cursor: "pointer", transition: "box-shadow 0.15s" }}>
                   <div style={{ height: 120, background: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                     {a.asset_type === "video" ? (
-                      a.stream_thumbnail_url ? <img src={a.stream_thumbnail_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 32 }}>video</span>
+                      a.stream_thumbnail_url ? <img src={a.stream_thumbnail_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 32, color: "var(--text-muted)" }}>video</span>
                     ) : (
-                      a.thumbnail_path ? <img src={a.thumbnail_path} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 32 }}>img</span>
+                      a.thumbnail_path ? <img src={a.thumbnail_path} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 32, color: "var(--text-muted)" }}>img</span>
                     )}
                   </div>
                   <div style={{ padding: "8px 10px" }}>
@@ -378,45 +507,69 @@ export default function ProductDetailPage() {
       )}
 
       {/* ═══ TAB: Inventory ═══ */}
-      {tab === "Inventory" && (
-        <div className="card">
-          <h3 style={{ marginBottom: 12 }}>Inventory by Warehouse</h3>
-          {data.inventory.length === 0 ? (
-            <p style={{ color: "var(--text-muted)", textAlign: "center", padding: 30 }}>No inventory data. Run inventory sync first.</p>
-          ) : (
-            <table className="results-table" style={{ width: "100%", fontSize: "0.85rem" }}>
-              <thead>
-                <tr>
-                  {["SKU", "Warehouse", "Available", "Actual", "Locked", "Defective", "Status"].map((h) => (
-                    <th key={h} style={{ padding: "8px 10px", textAlign: h === "SKU" || h === "Warehouse" ? "left" : "right" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.inventory.map((inv, i) => {
-                  const status = inv.available_qty <= 0 ? "Out" : inv.available_qty < 10 ? "Low" : "OK";
-                  return (
-                    <tr key={i} style={{ borderBottom: "1px solid var(--border-2)" }}>
-                      <td style={{ padding: "8px 10px", fontFamily: "monospace", fontSize: "0.82rem" }}>{inv.sku_code || inv.sku_id}</td>
-                      <td style={{ padding: "8px 10px" }}>{inv.warehouse_name || "—"}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: status === "Out" ? "var(--error)" : status === "Low" ? "var(--warn)" : "var(--ok)" }}>{inv.available_qty}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{inv.actual_qty}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{inv.locked_qty}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{inv.defective_qty}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right" }}>
-                        <Badge label={status} color={status === "Out" ? "#fff" : status === "Low" ? "#92400e" : "#065f46"} bg={status === "Out" ? "var(--error)" : status === "Low" ? "#fef3c7" : "#d1fae5"} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-          <div style={{ marginTop: 12, textAlign: "right" }}>
-            <a href="/inventory" style={{ fontSize: "0.82rem", color: "var(--app-accent)" }}>View Full Inventory</a>
+      {tab === "Inventory" && (() => {
+        // Aggregate by SKU across warehouses
+        const skuMap = new Map<string, { sku: string; total_available: number; total_actual: number; total_locked: number; total_defective: number; warehouses: any[] }>();
+        for (const inv of data.inventory) {
+          const sku = inv.sku_code || inv.sku_id || "unknown";
+          if (!skuMap.has(sku)) {
+            skuMap.set(sku, { sku, total_available: 0, total_actual: 0, total_locked: 0, total_defective: 0, warehouses: [] });
+          }
+          const agg = skuMap.get(sku)!;
+          agg.total_available += inv.available_qty || 0;
+          agg.total_actual += inv.actual_qty || 0;
+          agg.total_locked += inv.locked_qty || 0;
+          agg.total_defective += inv.defective_qty || 0;
+          agg.warehouses.push(inv);
+        }
+        const aggregated = Array.from(skuMap.values());
+        const grandTotal = aggregated.reduce((s, a) => s + a.total_available, 0);
+
+        return (
+          <div className="card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Inventory Summary</h3>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>Total Stock: <span style={{ color: grandTotal > 0 ? "var(--ok)" : "var(--error)" }}>{grandTotal.toLocaleString("th-TH")}</span></span>
+            </div>
+            {aggregated.length === 0 ? (
+              <p style={{ color: "var(--text-muted)", textAlign: "center", padding: 30 }}>No inventory data. Run inventory sync first.</p>
+            ) : (
+              <table className="results-table" style={{ width: "100%", fontSize: "0.85rem" }}>
+                <thead>
+                  <tr>
+                    {["SKU", "Available", "Actual", "Locked", "Defective", "Status", "Warehouses"].map((h) => (
+                      <th key={h} style={{ padding: "8px 10px", textAlign: h === "SKU" || h === "Warehouses" ? "left" : "right" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {aggregated.map((agg) => {
+                    const status = agg.total_available <= 0 ? "Out" : agg.total_available < 10 ? "Low" : "OK";
+                    return (
+                      <tr key={agg.sku} style={{ borderBottom: "1px solid var(--border-2)" }}>
+                        <td style={{ padding: "8px 10px", fontFamily: "monospace", fontSize: "0.82rem" }}>{agg.sku}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: status === "Out" ? "var(--error)" : status === "Low" ? "var(--warn)" : "var(--ok)" }}>{agg.total_available.toLocaleString("th-TH")}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "right" }}>{agg.total_actual.toLocaleString("th-TH")}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "right" }}>{agg.total_locked.toLocaleString("th-TH")}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "right" }}>{agg.total_defective.toLocaleString("th-TH")}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                          <Badge label={status} color={status === "Out" ? "#fff" : status === "Low" ? "#92400e" : "#065f46"} bg={status === "Out" ? "var(--error)" : status === "Low" ? "#fef3c7" : "#d1fae5"} />
+                        </td>
+                        <td style={{ padding: "8px 10px", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          {agg.warehouses.map((w: any) => `${w.warehouse_name || "WH#" + w.warehouse_id}: ${w.available_qty}`).join(" | ")}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            <div style={{ marginTop: 12, textAlign: "right" }}>
+              <a href="/inventory" style={{ fontSize: "0.82rem", color: "var(--app-accent)" }}>View Full Inventory</a>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ═══ TAB: Sales ═══ */}
       {tab === "Sales" && (
@@ -481,6 +634,73 @@ export default function ProductDetailPage() {
           )}
           <div style={{ marginTop: 12, textAlign: "right" }}>
             <a href="/products/pricing" style={{ fontSize: "0.82rem", color: "var(--app-accent)" }}>Manage in Pricing</a>
+          </div>
+        </div>
+      )}
+      {/* ═══ Image Lightbox Modal ═══ */}
+      {lightboxImage && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setLightboxImage(null)}>
+          <div style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
+            <img src={lightboxImage.url} alt={lightboxImage.filename} style={{ maxWidth: "90vw", maxHeight: "85vh", objectFit: "contain", borderRadius: 8 }} />
+            <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
+              <button className="ghost" onClick={() => downloadImage(lightboxImage.key, lightboxImage.filename)} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", padding: "8px 20px", fontSize: "0.85rem" }}>Download</button>
+              <button className="ghost" onClick={() => setLightboxImage(null)} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", padding: "8px 20px", fontSize: "0.85rem" }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Asset Popup Modal ═══ */}
+      {assetPopup && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setAssetPopup(null)}>
+          <div style={{ background: "#fff", borderRadius: 14, maxWidth: 720, width: "90vw", maxHeight: "90vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border-2)" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1rem" }}>{assetPopup.title || assetPopup.raw_filename || "Untitled"}</h3>
+                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                  <Badge label={assetPopup.asset_type} color="var(--text)" bg="var(--surface-2)" />
+                  <Badge label={assetPopup.status} color={assetPopup.status === "ready" || assetPopup.status === "approved" ? "var(--ok)" : "var(--text-muted)"} bg={assetPopup.status === "ready" || assetPopup.status === "approved" ? "#e6f7ef" : "var(--surface-2)"} />
+                </div>
+              </div>
+              <button className="ghost" onClick={() => setAssetPopup(null)} style={{ fontSize: "1.2rem", padding: "4px 10px" }}>{"\u2715"}</button>
+            </div>
+
+            {/* Preview */}
+            <div style={{ background: "#080f25", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+              {assetPopup.asset_type === "video" && assetPopup.stream_uid ? (
+                <div style={{ width: "100%", position: "relative", paddingBottom: "56.25%" }}>
+                  <iframe
+                    src={streamEmbedUrl(assetPopup.stream_uid)}
+                    style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+                    allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : assetPopup.thumbnail_path ? (
+                <img src={assetPopup.thumbnail_path} alt="" style={{ maxWidth: "100%", maxHeight: 420, objectFit: "contain" }} />
+              ) : assetPopup.stream_thumbnail_url ? (
+                <img src={assetPopup.stream_thumbnail_url} alt="" style={{ maxWidth: "100%", maxHeight: 420, objectFit: "contain" }} />
+              ) : (
+                <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.2rem" }}>No preview</span>
+              )}
+            </div>
+
+            {/* Info + Actions */}
+            <div style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                {assetPopup.raw_filename && <span>{assetPopup.raw_filename}</span>}
+                {assetPopup.duration_sec != null && <span> &middot; {assetPopup.duration_sec}s</span>}
+                {assetPopup.created_at && <span> &middot; {new Date(assetPopup.created_at).toLocaleDateString()}</span>}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="primary" onClick={() => downloadAsset(assetPopup)} disabled={assetDownloading} style={{ fontSize: "0.85rem", padding: "8px 20px" }}>
+                  {assetDownloading ? "Downloading..." : "Download"}
+                </button>
+                <a href={`/dam?q=${encodeURIComponent(sku)}`} className="ghost" style={{ fontSize: "0.85rem", padding: "8px 16px", textDecoration: "none" }}>Open in Library</a>
+                <button className="ghost" onClick={() => deleteAsset(assetPopup)} style={{ fontSize: "0.85rem", padding: "8px 16px", color: "var(--error)", borderColor: "rgba(220,38,38,0.3)" }}>Delete</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
