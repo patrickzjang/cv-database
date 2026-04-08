@@ -17,6 +17,16 @@ const SHEET_BRAND_MAP: Record<string, string[]> = {
 };
 
 async function getGoogleAuth() {
+  // Prefer env var (Vercel), fall back to file (local dev)
+  const envJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (envJson) {
+    const credentials = JSON.parse(envJson);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+    return auth;
+  }
   const keyPath = path.join(process.cwd(), "google-service-account.json");
   const auth = new google.auth.GoogleAuth({
     keyFile: keyPath,
