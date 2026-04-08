@@ -1,0 +1,39 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Dev Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "autoPort": true,
+      "env": { "PATH": "/usr/local/bin:/usr/bin:/bin" },
+      "cwd": "web-next",
+      "port": 3333
+    },
+    {
+      "name": "Supabase Local Stack",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["supabase", "start"],
+      "port": 54321
+    },
+    {
+      "name": "Supabase Studio",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["supabase", "start"],
+      "port": 54323
+    },
+    {
+      "name": "Supabase Edge Functions",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["supabase", "functions", "serve"],
+      "port": 8083
+    },
+    {
+      "name": "Legacy Static Web (web/)",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "5173"],
+      "cwd": "web",
+      "port": 5173
+    }
+  ]
+}
